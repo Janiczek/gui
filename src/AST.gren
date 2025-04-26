@@ -1,0 +1,19 @@
+module AST exposing (Expr(..))
+
+type Expr
+    = String String
+    | List (Array Expr)
+    | Element
+        { name : String
+        , id : Maybe String
+        , attributes : Array { name : String, value : Expr }
+        , child : Maybe Expr
+        }
+    | Stdin
+    | Stdout
+    | File { path : String }
+    | Function
+        { returnValue : Expr
+        , destination : Expr
+        }
+

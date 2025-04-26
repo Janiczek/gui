@@ -1,0 +1,27 @@
+module Main exposing (main, testSuite)
+
+import AST.Parser
+import Init
+import Node exposing (Environment)
+import Stream
+import Task
+import Test exposing (Test)
+
+
+main : Node.SimpleProgram a
+main =
+    Node.defineSimpleProgram init
+
+
+init : Environment -> Init.Task (Cmd a)
+init env =
+    Stream.writeLineAsBytes "Hello, World!" env.stdout
+        |> Task.onError (\_ -> Task.succeed env.stdout)
+        |> Node.endSimpleProgram
+
+
+testSuite : Test
+testSuite =
+    Test.describe "GUI"
+        [ AST.Parser.testSuite
+        ]

@@ -1,0 +1,199 @@
+module AST.Parser exposing (parser, testSuite)
+
+import AST exposing (Expr(..))
+import Expect
+import Parser exposing ((|.), (|=), Parser)
+import Test exposing (Test)
+
+
+spaces : Parser {}
+spaces =
+    Parser.chompWhile (\c -> c == ' ')
+
+
+parser : Parser Expr
+parser =
+    Parser.oneOf
+        [ string
+        , list
+        , element
+        , stdin
+        , stdout
+        , file
+        , function
+        ]
+
+
+string : Parser Expr
+string =
+    Parser.succeed String
+        |. Parser.token "\""
+        |= Parser.loop [] stringHelp
+
+
+stringHelp : Array String -> Parser (Parser.Step (Array String) String)
+stringHelp chunks =
+    Parser.oneOf
+        [ Parser.succeed (\chunk -> Parser.Loop (Array.pushLast chunk chunks))
+            |. Parser.token "\\"
+            |= Parser.oneOf
+                [ Parser.map (\_ -> "\n") (Parser.token "n")
+                , Parser.map (\_ -> "\t") (Parser.token "t")
+                , Parser.map (\_ -> "\u{000D}") (Parser.token "r")
+                , Parser.map (\_ -> "\"") (Parser.token "\"")
+                ]
+        , Parser.token "\""
+            |> Parser.map (\_ -> Parser.Done (String.join "" chunks))
+        , Parser.chompWhile isUninteresting
+            |> Parser.getChompedString
+            |> Parser.map (\chunk -> Parser.Loop (Array.pushLast chunk chunks))
+        ]
+
+
+isUninteresting : Char -> Bool
+isUninteresting char =
+    char /= '\\' && char /= '"'
+
+
+list : Parser Expr
+list =
+    Parser.map List <|
+        Parser.sequence
+            { start = "["
+            , separator = ","
+            , end = "]"
+            , spaces = spaces
+            , item = Parser.lazy (\{} -> parser)
+            , trailing = Parser.Optional
+            }
+
+
+element : Parser Expr
+element =
+    Parser.problem "element"
+
+
+file : Parser Expr
+file =
+    Parser.succeed (\path -> File { path = path })
+        |. Parser.token "FILE("
+        |= (Parser.getChompedString (Parser.chompWhile (\c -> c /= ')'))
+        |> Parser.andThen (\path -> 
+        let
+            trimmed = String.trim path
+        in
+       if String.isEmpty trimmed then Parser.problem "file" else Parser.succeed trimmed )
+        )
+        |. Parser.token ")"
+
+
+stdin : Parser Expr
+stdin =
+    Parser.succeed Stdin
+        |. Parser.token "STDIN"
+
+
+stdout : Parser Expr
+stdout =
+    Parser.succeed Stdout
+        |. Parser.token "STDOUT"
+
+
+function : Parser Expr
+function =
+    Parser.problem "function"
+
+
+
+-- TESTS
+
+
+testSuite : Test
+testSuite =
+    Test.describe "AST.Parser"
+        [ stringTests
+        , listTests
+        , stdinTests
+        , stdoutTests
+        , fileTests
+        ]
+
+testCase : { input : String, expected : Expr } -> Test
+testCase { input, expected } =
+    Test.test input <|
+        \_ ->
+            input
+                |> Parser.run parser
+                |> Expect.equal (Ok expected)
+
+maybeTestCase : { input : String, expected : Maybe Expr } -> Test
+maybeTestCase { input, expected } =
+    Test.test input <|
+        \_ ->
+            input
+                |> Parser.run parser
+                |> (when expected is
+                        Nothing ->
+                            Expect.err
+
+                        Just e ->
+                            Expect.equal (Ok e)
+                    )
+
+stdinTests : Test
+stdinTests =
+    Test.describe "stdin parser" <|
+        Array.map maybeTestCase
+            [ { input = "STDIN", expected = Just Stdin }
+            , { input = "stdin", expected = Nothing }
+            , { input = "Stdin", expected = Nothing }
+            ]
+
+
+stdoutTests : Test
+stdoutTests =
+    Test.describe "stdout parser" <|
+        Array.map maybeTestCase
+            [ { input = "STDOUT", expected = Just Stdout }
+            , { input = "stdout", expected = Nothing }
+            , { input = "Stdout", expected = Nothing }
+            ]
+
+
+fileTests : Test
+fileTests =
+    Test.describe "file parser" <|
+        Array.map maybeTestCase
+            [ { input = "FILE(a.txt)", expected = Just (File {path = "a.txt"}) }
+            , { input = "FILE()", expected = Nothing }
+            , { input = "FILE", expected = Nothing }
+            , { input = "file(a.txt)", expected = Nothing }
+            , { input = "file()", expected = Nothing }
+            , { input = "file", expected = Nothing }
+            , { input = "File(a.txt)", expected = Nothing }
+            , { input = "File()", expected = Nothing }
+            , { input = "File", expected = Nothing }
+            ]
+
+
+stringTests : Test
+stringTests =
+    Test.describe "string" <|
+        Array.map testCase
+            [ { input = "\"a\"", expected = String "a" }
+            , { input = "\"\"", expected = String "" }
+            , { input = "\"\\\"\"", expected = String "\"" }
+            , { input = "\"\\n\"", expected = String "\n" }
+            , { input = "\"\\r\"", expected = String "\r" }
+            , { input = "\"\\t\"", expected = String "\t" }
+            ]
+
+
+listTests : Test
+listTests =
+    Test.describe "list" <|
+        Array.map testCase
+            [ { input = "[]", expected = List [] }
+            , { input = "[\"\"]", expected = List [ String "" ] }
+            , { input = "[\"a\",\"b\"]", expected = List [ String "a", String "b" ] }
+            ]
