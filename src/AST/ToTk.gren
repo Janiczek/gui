@@ -14,6 +14,7 @@ import Test exposing (Test)
 prelude : String
 prelude =
     """
+    wm title . ""
     wm minsize . 300 200
     """
 
@@ -62,7 +63,9 @@ compileErrorKindToString kind =
 
 toTk : Expr -> Result CompileError String
 toTk expr =
-    toTk_ [] 0 expr
+
+        toTk_ [] 0 expr
+        |> Result.map (\tk -> prelude ++ "\n" ++ tk)
 
 
 toTk_ : Array String -> Int -> Expr -> Result CompileError String

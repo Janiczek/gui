@@ -1,3 +1,5 @@
 # label:"XYZ"
+wm title . ""
+wm minsize . 300 200
 label .label -text "XYZ"
 grid .label
