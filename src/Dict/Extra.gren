@@ -1,0 +1,19 @@
+module Dict.Extra exposing (fromArray, toArray)
+
+import Dict exposing (Dict)
+
+
+fromArray : Array { key : comparable, value : a } -> Dict comparable a
+fromArray array =
+    Array.foldl
+        (\{ key, value } acc -> Dict.set key value acc)
+        Dict.empty
+        array
+
+
+toArray : Dict comparable a -> Array { key : comparable, value : a }
+toArray dict =
+    Dict.foldl
+        (\key value acc -> Array.pushLast { key = key, value = value } acc)
+        []
+        dict

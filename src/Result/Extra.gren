@@ -1,0 +1,9 @@
+module Result.Extra exposing (combineMap)
+
+
+combineMap : (a -> Result e b) -> Array a -> Result e (Array b)
+combineMap f array =
+    Array.foldl
+        (\a acc -> Result.map2 Array.pushLast (f a) acc)
+        (Ok [])
+        array

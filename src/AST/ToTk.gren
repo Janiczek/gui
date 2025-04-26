@@ -1,0 +1,339 @@
+module AST.ToTk exposing (CompileError, compileErrorToString, testSuite, toTk)
+
+import AST exposing (Expr(..))
+import Array.Extra
+import Dict exposing (Dict)
+import Dict.Extra
+import Expect
+import Result.Extra
+import Set exposing (Set)
+import String.Extra
+import Test exposing (Test)
+
+
+prelude : String
+prelude =
+    """
+    wm minsize . 300 200
+    """
+
+
+type alias CompileError =
+    { ids : Array String
+    , kind : CompileErrorKind
+    }
+
+
+type CompileErrorKind
+    = RowNeedsListChild
+    | ColNeedsListChild
+    | LabelNeedsChild
+    | UnknownAttrs (Array String)
+    | UnknownElement String
+
+
+compileErrorToString : CompileError -> String
+compileErrorToString err =
+    (String.join "." err.ids
+        |> String.Extra.wrapWith "[" "]"
+    )
+        ++ " "
+        ++ compileErrorKindToString err.kind
+
+
+compileErrorKindToString : CompileErrorKind -> String
+compileErrorKindToString kind =
+    when kind is
+        RowNeedsListChild ->
+            "Row needs a list child"
+
+        ColNeedsListChild ->
+            "Col needs a list child"
+
+        LabelNeedsChild ->
+            "Label needs a child"
+
+        UnknownAttrs attrs ->
+            "Unknown attributes: " ++ String.join ", " (Array.map (\attr -> "\"" ++ attr ++ "\"") attrs)
+
+        UnknownElement name ->
+            "Unknown element: " ++ name
+
+
+toTk : Expr -> Result CompileError String
+toTk expr =
+    toTk_ [] 0 expr
+
+
+toTk_ : Array String -> Int -> Expr -> Result CompileError String
+toTk_ parentIds ix expr =
+    let
+        exprType =
+            when expr is
+                String _ ->
+                    "string"
+
+                Int _ ->
+                    "int"
+
+                List _ ->
+                    "list"
+
+                Id _ ->
+                    "id"
+
+                Element e ->
+                    e.name
+
+                Stdin ->
+                    "stdin"
+
+                Stdout ->
+                    "stdout"
+
+                File _ ->
+                    "file"
+
+                Function _ ->
+                    "function"
+
+        ids : Array String
+        ids =
+            Array.pushLast (exprType ++ String.fromInt ix) parentIds
+
+        err kind =
+            Err { ids = ids, kind = kind }
+    in
+    when expr is
+        String str ->
+            Ok <| "\"" ++ String.replace "\"" "\\\"" str ++ "\""
+
+        Int int ->
+            Ok <| String.fromInt int
+
+        List list ->
+            list
+                |> Array.Extra.indexed
+                |> Result.Extra.combineMap (\{ index, value } -> toTk_ ids index value)
+                |> Result.map (String.join ",")
+                |> Result.map (String.Extra.wrapWith "[" "]")
+
+        Id id ->
+            Array.pushLast id parentIds
+                |> Array.map (\id_ -> "." ++ id_)
+                |> String.join ""
+                |> Ok
+
+        Element element ->
+            when element.name is
+                "row" ->
+                    validateAttrs ids rowAttrs element.attrs
+                        |> Result.andThen
+                            (\{} ->
+                                let
+                                    gap : Maybe Int
+                                    gap =
+                                        getIntAttr "gap" element.attrs
+                                in
+                                when element.child |> Maybe.withDefault (List []) is
+                                    List list ->
+                                        toTkRow ids { gap = gap } list
+
+                                    _ ->
+                                        err RowNeedsListChild
+                            )
+
+                "col" ->
+                    validateAttrs ids colAttrs element.attrs
+                        |> Result.andThen
+                            (\{} ->
+                                let
+                                    gap : Maybe Int
+                                    gap =
+                                        getIntAttr "gap" element.attrs
+                                in
+                                when element.child |> Maybe.withDefault (List []) is
+                                    List list ->
+                                        toTkCol ids { gap = gap } list
+
+                                    _ ->
+                                        err ColNeedsListChild
+                            )
+
+                "label" ->
+                    validateAttrs ids labelAttrs element.attrs
+                        |> Result.andThen
+                            (\{} ->
+                                when element.child is
+                                    Nothing ->
+                                        err LabelNeedsChild
+
+                                    Just child ->
+                                        toTkLabel ids child
+                            )
+
+                _ ->
+                    err <| UnknownElement element.name
+
+        Stdin ->
+            Debug.todo "stdin"
+
+        Stdout ->
+            Debug.todo "stdout"
+
+        File { path } ->
+            Debug.todo "file"
+
+        Function { src, dst } ->
+            Debug.todo "function"
+
+
+toTkRow : Array String -> { gap : Maybe Int } -> Array Expr -> Result CompileError String
+toTkRow ids { gap } list =
+    -- TODO
+    list
+        |> Array.Extra.indexed
+        |> Result.Extra.combineMap (\{ index, value } -> toTk_ ids index value)
+        |> Result.map (String.join " ")
+
+
+toTkCol : Array String -> { gap : Maybe Int } -> Array Expr -> Result CompileError String
+toTkCol ids { gap } list =
+    -- TODO
+    list
+        |> Array.Extra.indexed
+        |> Result.Extra.combineMap (\{ index, value } -> toTk_ ids index value)
+        |> Result.map (String.join " ")
+
+
+toTkLabel : Array String -> Expr -> Result CompileError String
+toTkLabel ids child =
+    -- TODO
+    Ok "TODO toTkLabel"
+
+
+rowAttrs : Set String
+rowAttrs =
+    Set.fromArray [ "gap" ]
+
+
+colAttrs : Set String
+colAttrs =
+    Set.fromArray [ "gap" ]
+
+
+labelAttrs : Set String
+labelAttrs =
+    Set.empty
+
+
+validateAttrs : Array String -> Set String -> Dict String Expr -> Result CompileError {}
+validateAttrs ids allowedAttrs attrs =
+    let
+        presentAttrs =
+            Dict.keys attrs
+                |> Set.fromArray
+
+        disallowedAttrs =
+            Set.diff presentAttrs allowedAttrs
+    in
+    if Set.isEmpty disallowedAttrs then
+        Ok {}
+
+    else
+        Err { ids = ids, kind = UnknownAttrs (Set.toArray disallowedAttrs) }
+
+
+getIntAttr : String -> Dict String Expr -> Maybe Int
+getIntAttr name attrs =
+    attrs
+        |> Dict.get name
+        |> Maybe.andThen AST.getInt
+
+
+
+-- TESTS
+
+
+testSuite : Test
+testSuite =
+    Test.describe "AST.ToTk"
+        [ toTkTests
+        , toTkRowTests
+        , toTkColTests
+        , toTkLabelTests
+        ]
+
+
+toTkTests : Test
+toTkTests =
+    Test.describe "toTk"
+        [ test (AST.el "label" (String "XYZ"))
+            """
+            label ._auto1 -text "XYZ"
+            grid ._auto1 -row 0
+            """
+        ]
+
+
+toTkRowTests : Test
+toTkRowTests =
+    Test.describe "toTkRow"
+        [ eqTest "empty"
+            (toTkRow [] { gap = Nothing } [])
+            (Ok "")
+        , eqTest "single item"
+            (toTkRow [] { gap = Nothing } [ AST.el "label" (String "XYZ") ])
+            (Ok "")
+        , eqTest "two items"
+            (toTkRow [] { gap = Nothing } (Array.repeat 2 (AST.el "label" (String "XYZ"))))
+            (Ok "")
+        ]
+
+
+toTkColTests : Test
+toTkColTests =
+    Test.describe "toTkCol"
+        [ eqTest "empty"
+            (toTkCol [] { gap = Nothing } [])
+            (Ok "")
+        , eqTest "single item"
+            (toTkCol [] { gap = Nothing } [ AST.el "label" (String "XYZ") ])
+            (Ok "")
+        , eqTest "two items"
+            (toTkCol [] { gap = Nothing } (Array.repeat 2 (AST.el "label" (String "XYZ"))))
+            (Ok "")
+        ]
+
+
+toTkLabelTests : Test
+toTkLabelTests =
+    Test.describe "toTkLabel"
+        [ eqTest "string"
+            (toTkLabel [] (String "XYZ"))
+            (Ok
+                """
+                label .label0 -text "XYZ"
+                grid .label0
+                """
+            )
+        , eqTest "int"
+            (toTkLabel [] (Int 123))
+            (Ok "")
+        ]
+
+
+test : Expr -> String -> Test
+test input output =
+    Test.test (AST.toString input) <|
+        \_ ->
+            toTk input
+                |> Expect.equal (Ok output)
+
+
+eqTest : String -> a -> a -> Test
+eqTest label actual expected =
+    Test.test label <|
+        \_ ->
+            actual
+                |> Expect.equal expected

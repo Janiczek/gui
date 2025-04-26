@@ -1,0 +1,6 @@
+module String.Extra exposing (wrapWith)
+
+
+wrapWith : String -> String -> String -> String
+wrapWith prefix suffix str =
+    prefix ++ str ++ suffix

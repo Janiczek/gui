@@ -1,0 +1,14 @@
+module Array.Extra exposing (indexed)
+
+import Array exposing (Array)
+
+
+indexed : Array a -> Array { index : Int, value : a }
+indexed array =
+    array
+        |> Array.indexedMap
+            (\index value ->
+                { index = index
+                , value = value
+                }
+            )

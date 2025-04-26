@@ -1,16 +1,23 @@
-module AST exposing (Attr, Expr(..), testSuite, toTclTk)
+module AST exposing (Expr(..), el, getInt, toString)
 
+import Array.Extra
+import Dict exposing (Dict)
+import Dict.Extra
 import Expect
+import Result.Extra
+import Set exposing (Set)
+import String.Extra
 import Test exposing (Test)
 
 
 type Expr
     = String String
+    | Int Int
     | List (Array Expr)
     | Element
         { name : String
         , id : Maybe String
-        , attrs : Array Attr
+        , attrs : Dict String Expr
         , child : Maybe Expr
         }
     | Stdin
@@ -23,39 +30,14 @@ type Expr
         }
 
 
-type alias Attr =
-    { name : String
-    , value : Expr
-    }
+getInt : Expr -> Maybe Int
+getInt expr =
+    when expr is
+        Int int ->
+            Just int
 
-
-
--- TO TCL/TK
-
-
-toTclTk : Expr -> String
-toTclTk expr =
-    """
-    set text Hello
-    proc doIt {widget} {
-        global text
-        if {$text == "Hello"} {
-            set text "Goodbye"
-        } else {
-            set text "Hello"
-        }
-        $widget configure -text $text
-    }
-
-    button .b1 -text "Hello" \\
-            -command "doIt .b1"
-    button .b2 -text "Quit" \\
-        -command "destroy ."
-
-    # Put them in the window in row order
-    grid .b1 -row 0 -column 0
-    grid .b2 -row 0 -column 1
-    """
+        _ ->
+            Nothing
 
 
 
@@ -68,8 +50,12 @@ toString expr =
         String str ->
             "\"" ++ String.replace "\"" "\\\"" str ++ "\""
 
+        Int int ->
+            String.fromInt int
+
         List list ->
-            wrapWith "["
+            String.Extra.wrapWith
+                "["
                 "]"
                 (list
                     |> Array.map toString
@@ -80,9 +66,10 @@ toString expr =
             [ Just element.name
             , element.id |> Maybe.map (\id -> "#" ++ id)
             , element.attrs
-                |> Array.map (\attr -> attr.name ++ ":" ++ toString attr.value)
+                |> Dict.Extra.toArray
+                |> Array.map (\{ key, value } -> key ++ ":" ++ toString value)
                 |> String.join ","
-                |> ifEmpty (wrapWith "(" ")")
+                |> ifEmpty (String.Extra.wrapWith "(" ")")
             , element.child |> Maybe.map (\child -> " " ++ toString child)
             ]
                 |> Array.mapAndKeepJust identity
@@ -104,11 +91,6 @@ toString expr =
             toString src ++ "->" ++ toString dst
 
 
-wrapWith : String -> String -> String -> String
-wrapWith prefix suffix str =
-    prefix ++ " " ++ str ++ " " ++ suffix
-
-
 ifEmpty : (String -> String) -> String -> Maybe String
 ifEmpty f str =
     if str == "" then
@@ -118,31 +100,11 @@ ifEmpty f str =
         Just (f str)
 
 
-
--- TESTS
-
-
-testSuite : Test
-testSuite =
-    Test.describe "AST"
-        [ toTclTkTests
-        ]
-
-
-toTclTkTests : Test
-toTclTkTests =
-    Test.describe "toTclTk"
-        [ test (Element { name = "label", id = Nothing, attrs = [], child = Just (String "XYZ") })
-            """
-            label ._auto1 -text "XYZ"
-            grid ._auto1 -row 0
-            """
-        ]
-
-
-test : Expr -> String -> Test
-test input output =
-    Test.test (toString input) <|
-        \_ ->
-            toTclTk input
-                |> Expect.equal output
+el : String -> Expr -> Expr
+el name expr =
+    Element
+        { name = name
+        , id = Nothing
+        , attrs = Dict.empty
+        , child = Just expr
+        }

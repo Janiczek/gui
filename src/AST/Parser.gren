@@ -1,6 +1,8 @@
 module AST.Parser exposing (parser, testSuite)
 
-import AST exposing (Attr, Expr(..))
+import AST exposing (Expr(..))
+import Dict
+import Dict.Extra
 import Expect
 import Parser exposing ((|.), (|=), Parser)
 import Parser.Extra exposing (InfixParser, InfixParserTable)
@@ -31,6 +33,7 @@ prefixExpr : Parser Expr
 prefixExpr =
     Parser.oneOf
         [ string
+        , int
         , list
         , stdin
         , stdout
@@ -61,6 +64,21 @@ string =
     Parser.succeed String
         |. Parser.token "\""
         |= Parser.loop [] stringHelp
+
+
+int : Parser Expr
+int =
+    Parser.chompWhile Char.isDigit
+        |> Parser.getChompedString
+        |> Parser.andThen
+            (\str ->
+                when String.toInt str is
+                    Just int_ ->
+                        Parser.succeed (Int int_)
+
+                    Nothing ->
+                        Parser.problem "int"
+            )
 
 
 stringHelp : Array String -> Parser (Parser.Step (Array String) String)
@@ -155,7 +173,8 @@ element =
                 , id = id_
                 , attrs =
                     maybeAttrs
-                        |> Maybe.withDefault []
+                        |> Maybe.map Dict.Extra.fromArray
+                        |> Maybe.withDefault Dict.empty
                 , child = child
                 }
         )
@@ -182,9 +201,9 @@ element =
             )
 
 
-attr : Parser Attr
+attr : Parser { key : String, value : Expr }
 attr =
-    Parser.succeed (\name value -> { name = name, value = value })
+    Parser.succeed (\key value -> { key = key, value = value })
         |= identifier
         |. Parser.token ":"
         |= Parser.lazy (\{} -> parser)
@@ -200,7 +219,7 @@ maybe p =
 
 isFirstIdentifierChar : Char -> Bool
 isFirstIdentifierChar c =
-    Char.isLower c || Char.isDigit c || c == '_'
+    Char.isLower c || c == '_'
 
 
 isNonfirstIdentifierChar : Char -> Bool
@@ -232,6 +251,7 @@ testSuite : Test
 testSuite =
     Test.describe "AST.Parser"
         [ stringTests
+        , intTests
         , listTests
         , idTests
         , stdinTests
@@ -310,6 +330,16 @@ stringTests =
             ]
 
 
+intTests : Test
+intTests =
+    Test.describe "int" <|
+        Array.map testCase
+            [ { input = "0", expected = Int 0 }
+            , { input = "1", expected = Int 1 }
+            , { input = "10", expected = Int 10 }
+            ]
+
+
 listTests : Test
 listTests =
     Test.describe "list" <|
@@ -325,31 +355,26 @@ elementTests =
     Test.describe "element" <|
         Array.map testCase
             -- button
-            [ { input = "button", expected = Element { name = "button", id = Nothing, attrs = [], child = Nothing } }
-            , { input = "button#b1", expected = Element { name = "button", id = Just "b1", attrs = [], child = Nothing } }
-            , { input = "button#b_1", expected = Element { name = "button", id = Just "b_1", attrs = [], child = Nothing } }
-            , { input = "button#1", expected = Element { name = "button", id = Just "1", attrs = [], child = Nothing } }
-            , { input = "button#1_b", expected = Element { name = "button", id = Just "1_b", attrs = [], child = Nothing } }
-            , { input = "button:\"Hello\"", expected = Element { name = "button", id = Nothing, attrs = [], child = Just (String "Hello") } }
-            , { input = "button#b1:\"Hello\"", expected = Element { name = "button", id = Just "b1", attrs = [], child = Just (String "Hello") } }
-            , { input = "button:label:\"Hello\"", expected = Element { name = "button", id = Nothing, attrs = [], child = Just (Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }) } }
-            , { input = "button(bgcolor:\"red\")", expected = Element { name = "button", id = Nothing, attrs = [ { name = "bgcolor", value = String "red" } ], child = Nothing } }
+            [ { input = "button", expected = Element { name = "button", id = Nothing, attrs = Dict.empty, child = Nothing } }
+            , { input = "button#b1", expected = Element { name = "button", id = Just "b1", attrs = Dict.empty, child = Nothing } }
+            , { input = "button#b_1", expected = Element { name = "button", id = Just "b_1", attrs = Dict.empty, child = Nothing } }
+            , { input = "button:\"Hello\"", expected = Element { name = "button", id = Nothing, attrs = Dict.empty, child = Just (String "Hello") } }
+            , { input = "button#b1:\"Hello\"", expected = Element { name = "button", id = Just "b1", attrs = Dict.empty, child = Just (String "Hello") } }
+            , { input = "button:label:\"Hello\"", expected = Element { name = "button", id = Nothing, attrs = Dict.empty, child = Just (Element { name = "label", id = Nothing, attrs = Dict.empty, child = Just (String "Hello") }) } }
+            , { input = "button(bgcolor:\"red\")", expected = Element { name = "button", id = Nothing, attrs = Dict.Extra.fromArray [ { key = "bgcolor", value = String "red" } ], child = Nothing } }
             , -- label
-              { input = "label:\"Hello\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") } }
-            , { input = "label#l1", expected = Element { name = "label", id = Just "l1", attrs = [], child = Nothing } }
-            , { input = "label(fgcolor:\"red\")", expected = Element { name = "label", id = Nothing, attrs = [ { name = "fgcolor", value = String "red" } ], child = Nothing } }
+              { input = "label:\"Hello\"", expected = Element { name = "label", id = Nothing, attrs = Dict.empty, child = Just (String "Hello") } }
+            , { input = "label#l1", expected = Element { name = "label", id = Just "l1", attrs = Dict.empty, child = Nothing } }
+            , { input = "label(fgcolor:\"red\")", expected = Element { name = "label", id = Nothing, attrs = Dict.Extra.fromArray [ { key = "fgcolor", value = String "red" } ], child = Nothing } }
             , -- input
-              { input = "input(placeholder:\"Hello\")", expected = Element { name = "input", id = Nothing, attrs = [ { name = "placeholder", value = String "Hello" } ], child = Nothing } }
+              { input = "input(placeholder:\"Hello\")", expected = Element { name = "input", id = Nothing, attrs = Dict.Extra.fromArray [ { key = "placeholder", value = String "Hello" } ], child = Nothing } }
             , -- row,col
-              { input = "row:[label:\"Hello\", input:\"World\"]", expected = Element { name = "row", id = Nothing, attrs = [], child = Just (List [ Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") } ]) } }
-            , { input = "col:[label:\"Hello\", input:\"World\"]", expected = Element { name = "col", id = Nothing, attrs = [], child = Just (List [ Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") } ]) } }
+              { input = "row:[label:\"Hello\", input:\"World\"]", expected = Element { name = "row", id = Nothing, attrs = Dict.empty, child = Just (List [ Element { name = "label", id = Nothing, attrs = Dict.empty, child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = Dict.empty, child = Just (String "World") } ]) } }
+            , { input = "col:[label:\"Hello\", input:\"World\"]", expected = Element { name = "col", id = Nothing, attrs = Dict.empty, child = Just (List [ Element { name = "label", id = Nothing, attrs = Dict.empty, child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = Dict.empty, child = Just (String "World") } ]) } }
             , -- cases
-              { input = "camelCase", expected = Element { name = "camelCase", id = Nothing, attrs = [], child = Nothing } }
-            , { input = "btn0", expected = Element { name = "btn0", id = Nothing, attrs = [], child = Nothing } }
-            , { input = "btn_0", expected = Element { name = "btn_0", id = Nothing, attrs = [], child = Nothing } }
-            , { input = "0", expected = Element { name = "0", id = Nothing, attrs = [], child = Nothing } }
-            , { input = "0b", expected = Element { name = "0b", id = Nothing, attrs = [], child = Nothing } }
-            , { input = "0_b", expected = Element { name = "0_b", id = Nothing, attrs = [], child = Nothing } }
+              { input = "camelCase", expected = Element { name = "camelCase", id = Nothing, attrs = Dict.empty, child = Nothing } }
+            , { input = "btn0", expected = Element { name = "btn0", id = Nothing, attrs = Dict.empty, child = Nothing } }
+            , { input = "btn_0", expected = Element { name = "btn_0", id = Nothing, attrs = Dict.empty, child = Nothing } }
             ]
 
 
@@ -373,8 +398,6 @@ idTests =
             , { input = "#_1", expected = Id "_1" }
             , { input = "#_x", expected = Id "_x" }
             , { input = "#_X", expected = Id "_X" }
-            , { input = "#1x", expected = Id "1x" }
-            , { input = "#1", expected = Id "1" }
             ]
 
 
@@ -382,27 +405,40 @@ readmeExamples : Test
 readmeExamples =
     Test.describe "readme examples" <|
         Array.map testCase
-            [ { input = "label:\"XYZ\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "XYZ") } }
-            , { input = "textarea:STDIN", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just Stdin } }
-            , { input = "textarea:FILE(x.txt)", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just (File { path = "x.txt" }) } }
+            [ { input = "label:\"XYZ\"", expected = Element { name = "label", id = Nothing, attrs = Dict.empty, child = Just (String "XYZ") } }
+            , { input = "textarea:STDIN", expected = Element { name = "textarea", id = Nothing, attrs = Dict.empty, child = Just Stdin } }
+            , { input = "textarea:FILE(x.txt)", expected = Element { name = "textarea", id = Nothing, attrs = Dict.empty, child = Just (File { path = "x.txt" }) } }
             , { input =
                     """
-                        col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]
-                        """
+                    col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]
+                    """
               , expected =
                     Element
                         { name = "col"
                         , id = Nothing
-                        , attrs = []
+                        , attrs = Dict.empty
                         , child =
                             Just
                                 (List
-                                    [ Element { name = "label", id = Nothing, attrs = [], child = Just (String "Your name:") }
-                                    , Element { name = "input", id = Just "name", attrs = [], child = Nothing }
-                                    , Element { name = "button", id = Nothing, attrs = [ { name = "onclick", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Submit") }
+                                    [ Element { name = "label", id = Nothing, attrs = Dict.empty, child = Just (String "Your name:") }
+                                    , Element { name = "input", id = Just "name", attrs = Dict.empty, child = Nothing }
+                                    , Element { name = "button", id = Nothing, attrs = Dict.Extra.fromArray [ { key = "onclick", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Submit") }
                                     ]
                                 )
                         }
               }
-            , { input = "input#name(oninput:#name->STDOUT):\"Init value\"", expected = Element { name = "input", id = Just "name", attrs = [ { name = "oninput", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Init value") } }
+            , { input = "input#name(oninput:#name->STDOUT):\"Init value\""
+              , expected =
+                    Element
+                        { name = "input"
+                        , id = Just "name"
+                        , attrs =
+                            Dict.Extra.fromArray
+                                [ { key = "oninput"
+                                  , value = Function { src = Id "name", dst = Stdout }
+                                  }
+                                ]
+                        , child = Just (String "Init value")
+                        }
+              }
             ]

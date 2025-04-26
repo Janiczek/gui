@@ -1,0 +1,3 @@
+# label:"XYZ"
+label .label -text "XYZ"
+grid .label

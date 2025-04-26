@@ -2,6 +2,7 @@ module Main exposing (main, testSuite)
 
 import AST
 import AST.Parser
+import AST.ToTk
 import Bytes
 import ChildProcess
 import FileSystem
@@ -71,36 +72,37 @@ init env =
             Just programStr ->
                 when Parser.run AST.Parser.parser programStr is
                     Ok expr ->
-                        let
-                            tclTkStr =
-                                AST.toTclTk expr
-                        in
-                        Init.await FileSystem.initialize <|
-                            \fsPermission ->
-                                Init.await ChildProcess.initialize <|
-                                    \childProcessPermission ->
-                                        Node.startProgram
-                                            { model =
-                                                OkModel
-                                                    { fsPermission = fsPermission
-                                                    , childProcessPermission = childProcessPermission
-                                                    , env = env
-                                                    , initializedProcess = Nothing
-                                                    , stdinBeforeInitBuffer = []
+                        when AST.ToTk.toTk expr is
+                            Ok tkStr ->
+                                Init.await FileSystem.initialize <|
+                                    \fsPermission ->
+                                        Init.await ChildProcess.initialize <|
+                                            \childProcessPermission ->
+                                                Node.startProgram
+                                                    { model =
+                                                        OkModel
+                                                            { fsPermission = fsPermission
+                                                            , childProcessPermission = childProcessPermission
+                                                            , env = env
+                                                            , initializedProcess = Nothing
+                                                            , stdinBeforeInitBuffer = []
+                                                            }
+                                                    , command =
+                                                        FileSystem.makeTempDirectory fsPermission "gui"
+                                                            |> Task.andThen
+                                                                (\tempDir ->
+                                                                    let
+                                                                        tempFile =
+                                                                            tempDir
+                                                                                |> FileSystem.Path.append (FileSystem.Path.fromPosixString "gui.tk")
+                                                                    in
+                                                                    FileSystem.writeFile fsPermission (Bytes.fromString tkStr) tempFile
+                                                                )
+                                                            |> Task.attempt WroteTempFile
                                                     }
-                                            , command =
-                                                FileSystem.makeTempDirectory fsPermission "gui"
-                                                    |> Task.andThen
-                                                        (\tempDir ->
-                                                            let
-                                                                tempFile =
-                                                                    tempDir
-                                                                        |> FileSystem.Path.append (FileSystem.Path.fromPosixString "gui.tk")
-                                                            in
-                                                            FileSystem.writeFile fsPermission (Bytes.fromString tclTkStr) tempFile
-                                                        )
-                                                    |> Task.attempt WroteTempFile
-                                            }
+
+                            Err err ->
+                                Node.startProgram { model = ErrModel, command = exit (CompileError err) }
 
                     Err _ ->
                         Node.startProgram { model = ErrModel, command = exit CannotParse }
@@ -117,28 +119,36 @@ type ExitReason
     | ImpossibleBug
     | CannotParse
     | CannotWriteTempFile
-
-
-exitCode : ExitReason -> Int
-exitCode reason =
-    when reason is
-        WrongNumberOfArguments ->
-            1
-
-        CannotParse ->
-            2
-
-        CannotWriteTempFile ->
-            3
-
-        ImpossibleBug ->
-            42
+    | CompileError AST.ToTk.CompileError
 
 
 exit : ExitReason -> Cmd Msg
 exit reason =
-    Node.exitWithCode (exitCode reason)
-        |> Task.perform (\_ -> WeExited)
+    let
+        justExit n =
+            Node.exitWithCode n
+                |> Task.perform (\_ -> WeExited)
+
+        complainAndExit msg n =
+            -- TODO
+            Node.exitWithCode n
+                |> Task.perform (\_ -> WeExited)
+    in
+    when reason is
+        WrongNumberOfArguments ->
+            justExit 1
+
+        CannotParse ->
+            justExit 2
+
+        CannotWriteTempFile ->
+            justExit 3
+
+        CompileError err ->
+            complainAndExit (AST.ToTk.compileErrorToString err) 4
+
+        ImpossibleBug ->
+            justExit 42
 
 
 update : Msg -> Model -> { model : Model, command : Cmd Msg }
@@ -285,6 +295,6 @@ subscriptions model =
 testSuite : Test
 testSuite =
     Test.describe "GUI"
-        [ AST.testSuite
-        , AST.Parser.testSuite
+        [ AST.Parser.testSuite
+        , AST.ToTk.testSuite
         ]
