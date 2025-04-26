@@ -2,23 +2,203 @@ module Main exposing (main, testSuite)
 
 import AST
 import AST.Parser
+import ChildProcess
+import FileSystem
 import Init
 import Node exposing (Environment)
+import Process
 import Stream
 import Task
 import Test exposing (Test)
 
 
-main : Node.SimpleProgram a
+type alias Model =
+    { env : Environment
+    , fsPermission : FileSystem.Permission
+    , childProcessPermission : ChildProcess.Permission
+    , initializedProcess :
+        Maybe
+            { processId : Process.Id
+            , streams : Maybe ChildProcess.StreamIO
+            }
+    , stdinBeforeInitBuffer : Array String
+    }
+
+
+type Msg
+    = WishInitialized
+        { processId : Process.Id
+        , streams : Maybe ChildProcess.StreamIO
+        }
+    | WishExited Int
+    | WeExited
+    | GotStdin (Result Stream.Error (Maybe String))
+    | SentStdinToWish
+
+
+main : Node.Program Model Msg
 main =
-    Node.defineSimpleProgram init
+    Node.defineProgram
+        { init = init
+        , update = update
+        , subscriptions = subscriptions
+        }
 
 
-init : Environment -> Init.Task (Cmd a)
+init :
+    Environment
+    ->
+        Init.Task
+            { model : Model
+            , command : Cmd Msg
+            }
 init env =
-    Stream.writeLineAsBytes "Hello, World!" env.stdout
-        |> Task.onError (\_ -> Task.succeed env.stdout)
-        |> Node.endSimpleProgram
+    Init.await FileSystem.initialize <|
+        \fsPermission ->
+            Init.await ChildProcess.initialize <|
+                \childProcessPermission ->
+                    let
+                        defaultSpawnOptions =
+                            ChildProcess.defaultSpawnOptions
+                                WishInitialized
+                                WishExited
+                    in
+                    Node.startProgram
+                        { model =
+                            { fsPermission = fsPermission
+                            , childProcessPermission = childProcessPermission
+                            , env = env
+                            , initializedProcess = Nothing
+                            , stdinBeforeInitBuffer = []
+                            }
+                        , command =
+                            Cmd.batch
+                                [ ChildProcess.spawn childProcessPermission
+                                    "wish"
+                                    []
+                                    { defaultSpawnOptions | connection = ChildProcess.External }
+                                , Stream.readBytesAsString env.stdin
+                                    |> Task.attempt GotStdin
+                                ]
+                        }
+
+
+update : Msg -> Model -> { model : Model, command : Cmd Msg }
+update msg model =
+    when Debug.log "msg" msg is
+        WishInitialized data ->
+            if Array.isEmpty model.stdinBeforeInitBuffer then
+                { model = { model | initializedProcess = Just data }
+                , command = Cmd.none
+                }
+
+            else
+                when data.streams is
+                    Nothing ->
+                        { model =
+                            { model
+                                | initializedProcess = Just data
+                                , stdinBeforeInitBuffer = []
+                            }
+                        , command =
+                            Node.exitWithCode 1
+                                |> Task.perform (\_ -> WeExited)
+                        }
+
+                    Just streams ->
+                        let
+                            stdinStr =
+                                model.stdinBeforeInitBuffer
+                                    |> String.join "\n"
+                        in
+                        { model =
+                            { model
+                                | initializedProcess = Just data
+                                , stdinBeforeInitBuffer = []
+                            }
+                        , command =
+                            Stream.writeStringAsBytes stdinStr streams.input
+                                |> Task.attempt (\_ -> SentStdinToWish)
+                        }
+
+        WishExited code ->
+            { model = model
+            , command =
+                Node.exitWithCode code
+                    |> Task.perform (\_ -> WeExited)
+            }
+
+        WeExited ->
+            { model = model
+            , command = Cmd.none
+            }
+
+        GotStdin result ->
+            when result is
+                Err Stream.Closed ->
+                    { model = model
+                    , command = Node.exit |> Task.perform (\_ -> WeExited)
+                    }
+
+                Err (Stream.Cancelled str) ->
+                    let
+                        _ =
+                            Debug.log "Cancelled" str
+                    in
+                    { model = model
+                    , command = Cmd.none
+                    }
+
+                Err Stream.Locked ->
+                    let
+                        _ =
+                            Debug.log "Locked" {}
+                    in
+                    { model = model
+                    , command =
+                        Node.exitWithCode 1
+                            |> Task.perform (\_ -> WeExited)
+                    }
+
+                Ok Nothing ->
+                    let
+                        _ =
+                            Debug.log "Couldn't convert stream buffer to string" {}
+                    in
+                    { model = model
+                    , command =
+                        Node.exitWithCode 1
+                            |> Task.perform (\_ -> WeExited)
+                    }
+
+                Ok (Just stdinStr) ->
+                    when Maybe.andThen .streams model.initializedProcess is
+                        Nothing ->
+                            { model =
+                                { model
+                                    | stdinBeforeInitBuffer =
+                                        model.stdinBeforeInitBuffer
+                                            |> Array.pushLast stdinStr
+                                }
+                            , command = Cmd.none
+                            }
+
+                        Just streams ->
+                            { model = model
+                            , command =
+                                Stream.writeStringAsBytes stdinStr streams.input
+                                    |> Task.attempt (\_ -> SentStdinToWish)
+                            }
+
+        SentStdinToWish ->
+            { model = model
+            , command = Cmd.none
+            }
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
 
 
 testSuite : Test

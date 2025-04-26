@@ -1,6 +1,6 @@
 module AST.Parser exposing (parser, testSuite)
 
-import AST exposing (Expr(..), Attr)
+import AST exposing (Attr, Expr(..))
 import Expect
 import Parser exposing ((|.), (|=), Parser)
 import Parser.Extra exposing (InfixParser, InfixParserTable)
@@ -11,19 +11,21 @@ spaces : Parser {}
 spaces =
     Parser.chompWhile (\c -> c == ' ')
 
+
 parser : Parser Expr
 parser =
     parserAux 0 False
 
-parserAux : Int -> Bool -> Parser Expr
-parserAux precedence isRight = 
-    Parser.Extra.pratt
-    { isRight = isRight
-    , precedence = precedence
-    , prefix =  prefixExpr
-        , infix = infixExpr
 
-    }
+parserAux : Int -> Bool -> Parser Expr
+parserAux precedence isRight =
+    Parser.Extra.pratt
+        { isRight = isRight
+        , precedence = precedence
+        , prefix = prefixExpr
+        , infix = infixExpr
+        }
+
 
 prefixExpr : Parser Expr
 prefixExpr =
@@ -37,16 +39,22 @@ prefixExpr =
         , element
         ]
 
+
 infixExpr : InfixParserTable Expr
-infixExpr = 
-    [ { needs = "->", precedence = 1, isRight = True,parser = function } 
+infixExpr =
+    [ { needs = "->", precedence = 1, isRight = True, parser = function }
     ]
+
 
 location : Parser Expr
 location =
-    Parser.oneOf 
-        [ id, stdin, stdout, file
+    Parser.oneOf
+        [ id
+        , stdin
+        , stdout
+        , file
         ]
+
 
 string : Parser Expr
 string =
@@ -92,18 +100,24 @@ list =
             }
 
 
-
 file : Parser Expr
 file =
     Parser.succeed (\path -> File { path = path })
         |. Parser.token "FILE("
         |= (Parser.getChompedString (Parser.chompWhile (\c -> c /= ')'))
-        |> Parser.andThen (\path -> 
-        let
-            trimmed = String.trim path
-        in
-       if String.isEmpty trimmed then Parser.problem "file" else Parser.succeed trimmed )
-        )
+                |> Parser.andThen
+                    (\path ->
+                        let
+                            trimmed =
+                                String.trim path
+                        in
+                        if String.isEmpty trimmed then
+                            Parser.problem "file"
+
+                        else
+                            Parser.succeed trimmed
+                    )
+           )
         |. Parser.token ")"
 
 
@@ -112,6 +126,7 @@ id =
     Parser.succeed Id
         |. Parser.token "#"
         |= identifier
+
 
 stdin : Parser Expr
 stdin =
@@ -133,27 +148,39 @@ function config =
 
 element : Parser Expr
 element =
-    Parser.succeed (\name id_ maybeAttrs child -> Element { name = name, id = id_, attrs = maybeAttrs 
-    |> Maybe.withDefault []
-    , child = child })
+    Parser.succeed
+        (\name id_ maybeAttrs child ->
+            Element
+                { name = name
+                , id = id_
+                , attrs =
+                    maybeAttrs
+                        |> Maybe.withDefault []
+                , child = child
+                }
+        )
         |= identifier
-        |= maybe (Parser.succeed identity
-        |. Parser.token "#"
-        |= identifier
-        )
-        |= maybe (Parser.sequence
-            { start = "("
-            , separator = ","
-            , end = ")"
-            , spaces = spaces
-            , item = Parser.lazy (\{} -> attr)
-            , trailing = Parser.Optional
-            }
-        )
-        |= maybe (Parser.succeed identity
-        |. Parser.token ":"
-        |= Parser.lazy (\{} -> parser)
-        )
+        |= maybe
+            (Parser.succeed identity
+                |. Parser.token "#"
+                |= identifier
+            )
+        |= maybe
+            (Parser.sequence
+                { start = "("
+                , separator = ","
+                , end = ")"
+                , spaces = spaces
+                , item = Parser.lazy (\{} -> attr)
+                , trailing = Parser.Optional
+                }
+            )
+        |= maybe
+            (Parser.succeed identity
+                |. Parser.token ":"
+                |= Parser.lazy (\{} -> parser)
+            )
+
 
 attr : Parser Attr
 attr =
@@ -162,21 +189,24 @@ attr =
         |. Parser.token ":"
         |= Parser.lazy (\{} -> parser)
 
+
 maybe : Parser a -> Parser (Maybe a)
 maybe p =
-    Parser.oneOf 
-        [
-            Parser.map Just p
-            , Parser.succeed Nothing
+    Parser.oneOf
+        [ Parser.map Just p
+        , Parser.succeed Nothing
         ]
+
 
 isFirstIdentifierChar : Char -> Bool
 isFirstIdentifierChar c =
     Char.isLower c || Char.isDigit c || c == '_'
 
+
 isNonfirstIdentifierChar : Char -> Bool
 isNonfirstIdentifierChar c =
     Char.isAlphaNum c || c == '_'
+
 
 identifier : Parser String
 identifier =
@@ -184,9 +214,15 @@ identifier =
         |= Parser.getChompedString (Parser.chompIf isFirstIdentifierChar)
         |= Parser.getChompedString (Parser.chompWhile isNonfirstIdentifierChar)
     )
-    |> Parser.andThen (\id_ -> 
-    if String.isEmpty (String.trim id_) then Parser.problem "identifier" else Parser.succeed (String.trim id_)
-    )
+        |> Parser.andThen
+            (\id_ ->
+                if String.isEmpty (String.trim id_) then
+                    Parser.problem "identifier"
+
+                else
+                    Parser.succeed (String.trim id_)
+            )
+
 
 
 -- TESTS
@@ -206,6 +242,7 @@ testSuite =
         , readmeExamples
         ]
 
+
 testCase : { input : String, expected : Expr } -> Test
 testCase { input, expected } =
     Test.test input <|
@@ -213,6 +250,7 @@ testCase { input, expected } =
             input
                 |> Parser.run parser
                 |> Expect.equal (Ok expected)
+
 
 maybeTestCase : { input : String, expected : Maybe Expr } -> Test
 maybeTestCase { input, expected } =
@@ -226,7 +264,8 @@ maybeTestCase { input, expected } =
 
                         Just e ->
                             Expect.equal (Ok e)
-                    )
+                   )
+
 
 stdinTests : Test
 stdinTests =
@@ -244,9 +283,9 @@ fileTests : Test
 fileTests =
     Test.describe "file parser" <|
         Array.map maybeTestCase
-            [ { input = "FILE(a.txt)", expected = Just (File {path = "a.txt"}) }
-            , { input = "FILE(path/to/a.txt)", expected = Just (File {path = "path/to/a.txt"}) }
-            , { input = "FILE(path\\to\\a.txt)", expected = Just (File {path = "path\\to\\a.txt"}) }
+            [ { input = "FILE(a.txt)", expected = Just (File { path = "a.txt" }) }
+            , { input = "FILE(path/to/a.txt)", expected = Just (File { path = "path/to/a.txt" }) }
+            , { input = "FILE(path\\to\\a.txt)", expected = Just (File { path = "path\\to\\a.txt" }) }
             , { input = "FILE()", expected = Nothing }
             , { input = "File(a.txt)", expected = Nothing }
             , { input = "File()", expected = Nothing }
@@ -261,7 +300,12 @@ stringTests =
             , { input = "\"\"", expected = String "" }
             , { input = "\"\\\"\"", expected = String "\"" }
             , { input = "\"\\n\"", expected = String "\n" }
-            , { input = "\"\\r\"", expected = String "\r" }
+            , { input = "\"\\r\""
+              , expected =
+                    String
+                        """
+"""
+              }
             , { input = "\"\\t\"", expected = String "\t" }
             ]
 
@@ -290,23 +334,22 @@ elementTests =
             , { input = "button#b1:\"Hello\"", expected = Element { name = "button", id = Just "b1", attrs = [], child = Just (String "Hello") } }
             , { input = "button:label:\"Hello\"", expected = Element { name = "button", id = Nothing, attrs = [], child = Just (Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }) } }
             , { input = "button(bgcolor:\"red\")", expected = Element { name = "button", id = Nothing, attrs = [ { name = "bgcolor", value = String "red" } ], child = Nothing } }
-            -- label
-            , { input = "label:\"Hello\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") } }
+            , -- label
+              { input = "label:\"Hello\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") } }
             , { input = "label#l1", expected = Element { name = "label", id = Just "l1", attrs = [], child = Nothing } }
             , { input = "label(fgcolor:\"red\")", expected = Element { name = "label", id = Nothing, attrs = [ { name = "fgcolor", value = String "red" } ], child = Nothing } }
-            -- input
-            , { input = "input(placeholder:\"Hello\")", expected = Element { name = "input", id = Nothing, attrs = [ { name = "placeholder", value = String "Hello" } ], child = Nothing } }
-            -- row,col
-            , { input = "row:[label:\"Hello\", input:\"World\"]", expected = Element { name = "row", id = Nothing, attrs = [], child = Just (List [Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") }]) } }
-            , { input = "col:[label:\"Hello\", input:\"World\"]", expected = Element { name = "col", id = Nothing, attrs = [], child = Just (List [Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") }]) } }
-            -- cases
-            , { input = "camelCase", expected = Element { name = "camelCase", id = Nothing, attrs = [], child = Nothing } }
+            , -- input
+              { input = "input(placeholder:\"Hello\")", expected = Element { name = "input", id = Nothing, attrs = [ { name = "placeholder", value = String "Hello" } ], child = Nothing } }
+            , -- row,col
+              { input = "row:[label:\"Hello\", input:\"World\"]", expected = Element { name = "row", id = Nothing, attrs = [], child = Just (List [ Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") } ]) } }
+            , { input = "col:[label:\"Hello\", input:\"World\"]", expected = Element { name = "col", id = Nothing, attrs = [], child = Just (List [ Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") } ]) } }
+            , -- cases
+              { input = "camelCase", expected = Element { name = "camelCase", id = Nothing, attrs = [], child = Nothing } }
             , { input = "btn0", expected = Element { name = "btn0", id = Nothing, attrs = [], child = Nothing } }
             , { input = "btn_0", expected = Element { name = "btn_0", id = Nothing, attrs = [], child = Nothing } }
             , { input = "0", expected = Element { name = "0", id = Nothing, attrs = [], child = Nothing } }
             , { input = "0b", expected = Element { name = "0b", id = Nothing, attrs = [], child = Nothing } }
             , { input = "0_b", expected = Element { name = "0_b", id = Nothing, attrs = [], child = Nothing } }
-
             ]
 
 
@@ -315,9 +358,10 @@ functionTests =
     Test.describe "function" <|
         Array.map testCase
             [ { input = "#name->STDOUT", expected = Function { src = Id "name", dst = Stdout } }
-            , { input = "#x->#name", expected = Function { src = Id "x", dst = Id "name" }}
+            , { input = "#x->#name", expected = Function { src = Id "x", dst = Id "name" } }
             , { input = "#name->FILE(output.txt)", expected = Function { src = Id "name", dst = File { path = "output.txt" } } }
             ]
+
 
 idTests : Test
 idTests =
@@ -333,22 +377,32 @@ idTests =
             , { input = "#1", expected = Id "1" }
             ]
 
+
 readmeExamples : Test
 readmeExamples =
     Test.describe "readme examples" <|
         Array.map testCase
-            
-            [ {input = "label:\"XYZ\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "XYZ") } }
-                , { input = "textarea:STDIN", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just Stdin } }
-               , {input = "textarea:FILE(x.txt)", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just (File { path = "x.txt" }) } }
-            ,     { input = """
+            [ { input = "label:\"XYZ\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "XYZ") } }
+            , { input = "textarea:STDIN", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just Stdin } }
+            , { input = "textarea:FILE(x.txt)", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just (File { path = "x.txt" }) } }
+            , { input =
+                    """
                         col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]
-                        """, expected = 
-                Element { name = "col", id = Nothing, attrs = [], child = Just (List 
-                [Element { name = "label", id = Nothing, attrs = [], child = Just (String "Your name:") }
-                , Element { name = "input", id = Just "name", attrs = [], child = Nothing }
-                , Element { name = "button", id = Nothing, attrs = [ { name = "onclick", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Submit") }
-                ]) } 
-                }
-                , {input = "input#name(oninput:#name->STDOUT):\"Init value\"", expected = Element { name = "input", id = Just "name", attrs = [ { name = "oninput", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Init value") } }
+                        """
+              , expected =
+                    Element
+                        { name = "col"
+                        , id = Nothing
+                        , attrs = []
+                        , child =
+                            Just
+                                (List
+                                    [ Element { name = "label", id = Nothing, attrs = [], child = Just (String "Your name:") }
+                                    , Element { name = "input", id = Just "name", attrs = [], child = Nothing }
+                                    , Element { name = "button", id = Nothing, attrs = [ { name = "onclick", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Submit") }
+                                    ]
+                                )
+                        }
+              }
+            , { input = "input#name(oninput:#name->STDOUT):\"Init value\"", expected = Element { name = "input", id = Just "name", attrs = [ { name = "oninput", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Init value") } }
             ]

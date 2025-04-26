@@ -1,6 +1,7 @@
-module Parser.Extra exposing (pratt, InfixParserTable, InfixParserCase, InfixParser)
+module Parser.Extra exposing (InfixParser, InfixParserCase, InfixParserTable, pratt)
 
-import Parser exposing (Parser, (|.), (|=), andThen, succeed, oneOf)
+import Parser exposing ((|.), (|=), Parser, andThen, oneOf, succeed)
+
 
 type alias InfixParser a =
     { left : a
@@ -10,7 +11,8 @@ type alias InfixParser a =
     -> Parser a
 
 
-type alias InfixParserTable a = Array (InfixParserCase a)
+type alias InfixParserTable a =
+    Array (InfixParserCase a)
 
 
 type alias InfixParserCase a =
@@ -19,6 +21,7 @@ type alias InfixParserCase a =
     , isRight : Bool
     , parser : InfixParser a
     }
+
 
 pratt :
     { isRight : Bool
@@ -59,6 +62,7 @@ pratt config =
                                                         , isRight = infix.isRight
                                                         }
                                                         |> andThen go
+
                                                 else
                                                     succeed left
                                     )
@@ -67,6 +71,7 @@ pratt config =
                 in
                 go prefix
             )
+
 
 findMatchingInfixParser : InfixParserTable a -> Parser (Maybe (InfixParserCase a))
 findMatchingInfixParser infixTable =

@@ -1,8 +1,7 @@
 .PHONY: format test run compile compileTests compileGui
 
-#format:
-#	elm-format --yes src/**/*.gren
-#	node ../../cloned/gren-format-unofficial/node-gren-format-unofficial/src/index.js
+format:
+	node ../../cloned/gren-format-unofficial/node-gren-format-unofficial/dist/index.cjs
 
 compile: compileTests compileGui
 
@@ -12,8 +11,8 @@ compileTests:
 compileGui:
 	npx gren make --output=gui src/Main.gren
 
-test: compileTests
+test: format compileTests
 	node ./test
 
-run: compileGui
+run: format compileGui
 	node ./gui
