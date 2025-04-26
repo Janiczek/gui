@@ -203,6 +203,7 @@ testSuite =
         , fileTests
         , elementTests
         , functionTests
+        , readmeExamples
         ]
 
 testCase : { input : String, expected : Expr } -> Test
@@ -244,6 +245,8 @@ fileTests =
     Test.describe "file parser" <|
         Array.map maybeTestCase
             [ { input = "FILE(a.txt)", expected = Just (File {path = "a.txt"}) }
+            , { input = "FILE(path/to/a.txt)", expected = Just (File {path = "path/to/a.txt"}) }
+            , { input = "FILE(path\\to\\a.txt)", expected = Just (File {path = "path\\to\\a.txt"}) }
             , { input = "FILE()", expected = Nothing }
             , { input = "File(a.txt)", expected = Nothing }
             , { input = "File()", expected = Nothing }
@@ -328,4 +331,24 @@ idTests =
             , { input = "#_X", expected = Id "_X" }
             , { input = "#1x", expected = Id "1x" }
             , { input = "#1", expected = Id "1" }
+            ]
+
+readmeExamples : Test
+readmeExamples =
+    Test.describe "readme examples" <|
+        Array.map testCase
+            
+            [ {input = "label:\"XYZ\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "XYZ") } }
+                , { input = "textarea:STDIN", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just Stdin } }
+               , {input = "textarea:FILE(x.txt)", expected = Element { name = "textarea", id = Nothing, attrs = [], child = Just (File { path = "x.txt" }) } }
+            ,     { input = """
+                        col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]
+                        """, expected = 
+                Element { name = "col", id = Nothing, attrs = [], child = Just (List 
+                [Element { name = "label", id = Nothing, attrs = [], child = Just (String "Your name:") }
+                , Element { name = "input", id = Just "name", attrs = [], child = Nothing }
+                , Element { name = "button", id = Nothing, attrs = [ { name = "onclick", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Submit") }
+                ]) } 
+                }
+                , {input = "input#name(oninput:#name->STDOUT):\"Init value\"", expected = Element { name = "input", id = Just "name", attrs = [ { name = "oninput", value = Function { src = Id "name", dst = Stdout } } ], child = Just (String "Init value") } }
             ]

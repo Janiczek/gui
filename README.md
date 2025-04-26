@@ -19,7 +19,7 @@ gui 'textarea:FILE(x.txt)'
 ```
 
 ```bash
-gui 'vert:[label:"Your name:", input#name, button(onclick:name->STDOUT):"Submit"]'
+gui 'col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]'
 ```
 
 TODO: example of a wizard dialog
@@ -28,7 +28,7 @@ TODO: example of a JSON input to `gui` (multiple inputs)
 
 ## Dependencies
 
-- Tcl/Tk (`brew install tcl-tk`)
+- Tcl/Tk 9 (`brew install tcl-tk`)
 
 ## The language
 
@@ -40,7 +40,7 @@ input
 input#name
 input:"Value"
 input(placeholder:"Placeholder")
-input#name(oninput:name->STDOUT):"Init value"
+input#name(oninput:#name->STDOUT):"Init value"
 ```
 
 In addition to elements there are also arrays:
