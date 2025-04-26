@@ -129,9 +129,21 @@ row(gap:5):[button:"OK", button:"Cancel"]
 
 ## TODOs
 
+- JSON mode:
+```json
+{
+    "col": [
+        { "label": "Your name:" },
+        { "input#name": null },
+        { "button": { onclick: "#name->STDOUT", value: "Submit" } }
+    ]
+}
+```
+
 - json expando tree view
 - example of a wizard dialog
 - example of plucking just some values from JSON
 - document supported attributes and examples
 - what about appending to a file?
 - what about negative numbers
+
