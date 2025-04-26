@@ -1,4 +1,8 @@
-module AST exposing (Expr(..), Attr)
+module AST exposing (Attr, Expr(..), testSuite, toTclTk)
+
+import Expect
+import Test exposing (Test)
+
 
 type Expr
     = String String
@@ -19,5 +23,54 @@ type Expr
         }
 
 
-type alias Attr = { name : String
-    , value : Expr }
+type alias Attr =
+    { name : String
+    , value : Expr
+    }
+
+
+toTclTk : Expr -> String
+toTclTk expr =
+    let
+        _ =
+            Debug.log "TODO toTclTk" {}
+    in
+    """
+    set text Hello
+    proc doIt {widget} {
+        global text
+        if {$text == "Hello"} {
+            set text "Goodbye"
+        } else {
+            set text "Hello"
+        }
+        $widget configure -text $text
+    }
+
+    button .b1 -text "Hello" \\
+            -command "doIt .b1"
+    button .b2 -text "Quit" \\
+        -command "destroy ."
+
+    # Put them in the window in row order
+    grid .b1 -row 0 -column 0
+    grid .b2 -row 0 -column 1
+    """
+
+
+
+-- TESTS
+
+
+testSuite : Test
+testSuite =
+    Test.describe "AST"
+        [ toTclTkTests
+        ]
+
+
+toTclTkTests : Test
+toTclTkTests =
+    Test.describe "toTclTk"
+        [ Test.todo "first test"
+        ]

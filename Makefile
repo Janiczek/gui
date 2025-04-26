@@ -2,6 +2,7 @@
 
 #format:
 #	elm-format --yes src/**/*.gren
+#	node ../../cloned/gren-format-unofficial/node-gren-format-unofficial/src/index.js
 
 compile: compileTests compileGui
 
