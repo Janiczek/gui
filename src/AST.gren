@@ -72,5 +72,17 @@ testSuite =
 toTclTkTests : Test
 toTclTkTests =
     Test.describe "toTclTk"
-        [ Test.todo "first test"
+        [ test (Element { name = "label", id = Nothing, attrs = [], child = Just (String "XYZ") })
+            """
+            label ._auto1 -text "XYZ"
+            grid ._auto1 -row 0
+            """
         ]
+
+
+test : Expr -> String -> Test
+test input output =
+    Test.test (Debug.toString input) <|
+        \_ ->
+            toTclTk input
+                |> Expect.equal output

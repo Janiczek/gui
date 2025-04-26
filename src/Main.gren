@@ -2,17 +2,25 @@ module Main exposing (main, testSuite)
 
 import AST
 import AST.Parser
+import Bytes
 import ChildProcess
 import FileSystem
+import FileSystem.Path
 import Init
 import Node exposing (Environment)
+import Parser
 import Process
 import Stream
 import Task
 import Test exposing (Test)
 
 
-type alias Model =
+type Model
+    = OkModel OkModel
+    | ErrModel
+
+
+type alias OkModel =
     { env : Environment
     , fsPermission : FileSystem.Permission
     , childProcessPermission : ChildProcess.Permission
@@ -30,10 +38,11 @@ type Msg
         { processId : Process.Id
         , streams : Maybe ChildProcess.StreamIO
         }
-    | WishExited Int
-    | WeExited
+    | WroteTempFile (Result FileSystem.Error FileSystem.Path.Path)
     | GotStdin (Result Stream.Error (Maybe String))
     | SentStdinToWish
+    | WishExited Int
+    | WeExited
 
 
 main : Node.Program Model Msg
@@ -53,42 +62,73 @@ init :
             , command : Cmd Msg
             }
 init env =
-    Init.await FileSystem.initialize <|
-        \fsPermission ->
-            Init.await ChildProcess.initialize <|
-                \childProcessPermission ->
-                    let
-                        defaultSpawnOptions =
-                            ChildProcess.defaultSpawnOptions
-                                WishInitialized
-                                WishExited
-                    in
-                    Node.startProgram
-                        { model =
-                            { fsPermission = fsPermission
-                            , childProcessPermission = childProcessPermission
-                            , env = env
-                            , initializedProcess = Nothing
-                            , stdinBeforeInitBuffer = []
-                            }
-                        , command =
-                            Cmd.batch
-                                [ ChildProcess.spawn childProcessPermission
-                                    "wish"
-                                    []
-                                    { defaultSpawnOptions | connection = ChildProcess.External }
-                                , Stream.readBytesAsString env.stdin
-                                    |> Task.attempt GotStdin
-                                ]
-                        }
+    if Array.length env.args == 1 then
+        when Array.get 0 env.args is
+            Just programStr ->
+                when Parser.run AST.Parser.parser programStr is
+                    Ok expr ->
+                        let
+                            tclTkStr =
+                                AST.toTclTk expr
+                        in
+                        Init.await FileSystem.initialize <|
+                            \fsPermission ->
+                                Init.await ChildProcess.initialize <|
+                                    \childProcessPermission ->
+                                        Node.startProgram
+                                            { model =
+                                                OkModel
+                                                    { fsPermission = fsPermission
+                                                    , childProcessPermission = childProcessPermission
+                                                    , env = env
+                                                    , initializedProcess = Nothing
+                                                    , stdinBeforeInitBuffer = []
+                                                    }
+                                            , command =
+                                                FileSystem.makeTempDirectory fsPermission "gui"
+                                                    |> Task.andThen
+                                                        (\tempDir ->
+                                                            let
+                                                                tempFile =
+                                                                    FileSystem.Path.append tempDir (FileSystem.Path.fromPosixString "gui.tk")
+                                                            in
+                                                            FileSystem.writeFile fsPermission (Bytes.fromString tclTkStr) tempFile
+                                                        )
+                                                    |> Task.attempt WroteTempFile
+                                            }
+
+                    Err _ ->
+                        Node.startProgram { model = ErrModel, command = exit 1 }
+
+            Nothing ->
+                Node.startProgram { model = ErrModel, command = exit 1 }
+
+    else
+        Node.startProgram { model = ErrModel, command = exit 1 }
+
+
+exit : Int -> Cmd Msg
+exit code =
+    Node.exitWithCode code
+        |> Task.perform (\_ -> WeExited)
 
 
 update : Msg -> Model -> { model : Model, command : Cmd Msg }
 update msg model =
+    when model is
+        ErrModel ->
+            { model = ErrModel, command = exit 1 }
+
+        OkModel model_ ->
+            updateOk msg model_
+
+
+updateOk : Msg -> OkModel -> { model : Model, command : Cmd Msg }
+updateOk msg model =
     when Debug.log "msg" msg is
         WishInitialized data ->
             if Array.isEmpty model.stdinBeforeInitBuffer then
-                { model = { model | initializedProcess = Just data }
+                { model = OkModel { model | initializedProcess = Just data }
                 , command = Cmd.none
                 }
 
@@ -96,10 +136,11 @@ update msg model =
                 when data.streams is
                     Nothing ->
                         { model =
-                            { model
-                                | initializedProcess = Just data
-                                , stdinBeforeInitBuffer = []
-                            }
+                            OkModel
+                                { model
+                                    | initializedProcess = Just data
+                                    , stdinBeforeInitBuffer = []
+                                }
                         , command =
                             Node.exitWithCode 1
                                 |> Task.perform (\_ -> WeExited)
@@ -112,31 +153,58 @@ update msg model =
                                     |> String.join "\n"
                         in
                         { model =
-                            { model
-                                | initializedProcess = Just data
-                                , stdinBeforeInitBuffer = []
-                            }
+                            OkModel
+                                { model
+                                    | initializedProcess = Just data
+                                    , stdinBeforeInitBuffer = []
+                                }
                         , command =
                             Stream.writeStringAsBytes stdinStr streams.input
                                 |> Task.attempt (\_ -> SentStdinToWish)
                         }
 
+        WroteTempFile result ->
+            when result is
+                Err err ->
+                    let
+                        _ =
+                            Debug.log "error writing temp file" err
+                    in
+                    { model = ErrModel
+                    , command = exit 1
+                    }
+
+                Ok tempFile ->
+                    let
+                        defaultSpawnOptions =
+                            ChildProcess.defaultSpawnOptions
+                                WishInitialized
+                                WishExited
+                    in
+                    { model = OkModel model
+                    , command =
+                        ChildProcess.spawn model.childProcessPermission
+                            "wish"
+                            [ FileSystem.Path.toPosixString tempFile ]
+                            { defaultSpawnOptions | connection = ChildProcess.External }
+                    }
+
         WishExited code ->
-            { model = model
+            { model = OkModel model
             , command =
                 Node.exitWithCode code
                     |> Task.perform (\_ -> WeExited)
             }
 
         WeExited ->
-            { model = model
+            { model = OkModel model
             , command = Cmd.none
             }
 
         GotStdin result ->
             when result is
                 Err Stream.Closed ->
-                    { model = model
+                    { model = OkModel model
                     , command = Node.exit |> Task.perform (\_ -> WeExited)
                     }
 
@@ -145,7 +213,7 @@ update msg model =
                         _ =
                             Debug.log "Cancelled" str
                     in
-                    { model = model
+                    { model = OkModel model
                     , command = Cmd.none
                     }
 
@@ -154,7 +222,7 @@ update msg model =
                         _ =
                             Debug.log "Locked" {}
                     in
-                    { model = model
+                    { model = OkModel model
                     , command =
                         Node.exitWithCode 1
                             |> Task.perform (\_ -> WeExited)
@@ -165,7 +233,7 @@ update msg model =
                         _ =
                             Debug.log "Couldn't convert stream buffer to string" {}
                     in
-                    { model = model
+                    { model = OkModel model
                     , command =
                         Node.exitWithCode 1
                             |> Task.perform (\_ -> WeExited)
@@ -175,23 +243,24 @@ update msg model =
                     when Maybe.andThen .streams model.initializedProcess is
                         Nothing ->
                             { model =
-                                { model
-                                    | stdinBeforeInitBuffer =
-                                        model.stdinBeforeInitBuffer
-                                            |> Array.pushLast stdinStr
-                                }
+                                OkModel
+                                    { model
+                                        | stdinBeforeInitBuffer =
+                                            model.stdinBeforeInitBuffer
+                                                |> Array.pushLast stdinStr
+                                    }
                             , command = Cmd.none
                             }
 
                         Just streams ->
-                            { model = model
+                            { model = OkModel model
                             , command =
                                 Stream.writeStringAsBytes stdinStr streams.input
                                     |> Task.attempt (\_ -> SentStdinToWish)
                             }
 
         SentStdinToWish ->
-            { model = model
+            { model = OkModel model
             , command = Cmd.none
             }
 

@@ -1,6 +1,6 @@
 # gui
 
-An UNIX-y pipeline-friendly utility for standing up GUIs.
+An UNIX-philosophy utility for standing up GUIs.
 
 ```bash
 gui 'label:"XYZ"'
