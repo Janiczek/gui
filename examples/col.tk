@@ -1,0 +1,13 @@
+wm title . ""
+wm minsize . 300 200
+frame .main
+pack .main -fill both -expand true -padx 10 -pady 10
+label .main.label -text "Your name:"
+entry .main.name
+button .main.submit -text "Submit"
+pack .main.label -side top -anchor w
+pack .main.name -side top -anchor w
+pack .main.submit -side top -anchor w
+.main.submit configure -command {
+    puts [.main.name get]
+} 

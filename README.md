@@ -15,12 +15,7 @@ An UNIX-philosophy utility for standing up GUIs.
 | `echo Hello \| gui label:STDIN`                                                      | ![](https://github.com/Janiczek/gui/raw/main/examples/stdin.webp)    |
 | `seq 100 \| gui textarea:STDIN`                                                      | ![](https://github.com/Janiczek/gui/raw/main/examples/textarea.webp) |
 | `gui 'textarea:FILE(x.txt)'`                                                         | ![](https://github.com/Janiczek/gui/raw/main/examples/readfile.webp) |
-| `gui 'col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]'` |                                                                      |
-| `gui 'jsontree:FILE(x.json)'`                                                        |                                                                      |
-
-TODO: example of a wizard dialog
-
-TODO: example of plucking just some values from JSON
+| `gui 'col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]'` | ![](https://github.com/Janiczek/gui/raw/main/examples/col.webp)      |
 
 ## Dependencies
 
@@ -47,8 +42,6 @@ Integers are specified as numbers:
 123
 0
 ```
-
-TODO what about negative numbers
 
 ### Basic Elements
 
@@ -112,8 +105,6 @@ syntax (`->`):
 "Bleh"->STDERR         # Send the string to STDERR
 ```
 
-TODO: what about appending?
-
 ### Supported Elements
 
 Currently supported elements include:
@@ -125,8 +116,6 @@ Currently supported elements include:
 - `col` - Vertical container
 - `row` - Horizontal container
 
-TODO supported attributes and examples
-
 Examples:
 
 ```
@@ -137,3 +126,12 @@ button(onclick:#name->STDOUT):"Click me"
 col:[label:"Name:", input#name]
 row(gap:5):[button:"OK", button:"Cancel"]
 ```
+
+## TODOs
+
+- json expando tree view
+- example of a wizard dialog
+- example of plucking just some values from JSON
+- document supported attributes and examples
+- what about appending to a file?
+- what about negative numbers
