@@ -1,0 +1,18 @@
+# textarea:FILE(readfile.tk)
+wm title . ""
+wm minsize . 300 200
+frame .frame
+grid .frame -sticky nsew
+text .frame.text -wrap word
+if {[catch {
+    set f [open "readfile.tk" r]
+    set content [read $f]
+    close $f
+    .frame.text insert 1.0 $content
+} err]} {
+    .frame.text insert 1.0 "Error reading file: $err"
+}
+scrollbar .frame.vscroll -orient vertical -command ".frame.text yview"
+.frame.text configure -yscrollcommand ".frame.vscroll set"
+grid .frame.text -row 0 -column 0 -sticky nsew
+grid .frame.vscroll -row 0 -column 1 -sticky ns
