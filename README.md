@@ -135,7 +135,7 @@ row(gap:5):[button:"OK", button:"Cancel"]
     "col": [
         { "label": "Your name:" },
         { "input#name": null },
-        { "button": { onclick: "#name->STDOUT", value: "Submit" } }
+        { "button": { "onclick": "#name->STDOUT", "value": "Submit" } }
     ]
 }
 ```
