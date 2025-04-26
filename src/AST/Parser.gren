@@ -116,6 +116,8 @@ testSuite =
         , stdinTests
         , stdoutTests
         , fileTests
+        , elementTests
+        , functionTests
         ]
 
 testCase : { input : String, expected : Expr } -> Test
@@ -197,3 +199,37 @@ listTests =
             , { input = "[\"\"]", expected = List [ String "" ] }
             , { input = "[\"a\",\"b\"]", expected = List [ String "a", String "b" ] }
             ]
+
+
+elementTests : Test
+elementTests =
+    Test.describe "element" <|
+        Array.map testCase
+            -- button
+            [ { input = "button", expected = Element { name = "button", id = Nothing, attributes = [], child = Nothing } }
+            , { input = "button#b1", expected = Element { name = "button", id = Just "b1", attributes = [], child = Nothing } }
+            , { input = "button:\"Hello\"", expected = Element { name = "button", id = Nothing, attributes = [], child = Just (String "Hello") } }
+            , { input = "button#b1:\"Hello\"", expected = Element { name = "button", id = Just "b1", attributes = [], child = Just (String "Hello") } }
+            , { input = "button:label:\"Hello\"", expected = Element { name = "button", id = Nothing, attributes = [], child = Just (Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") }) } }
+            , { input = "button(bgcolor:\"red\")", expected = Element { name = "button", id = Nothing, attributes = [ { name = "bgcolor", value = String "red" } ], child = Nothing } }
+            -- label
+            , { input = "label:\"Hello\"", expected = Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") } }
+            , { input = "label#l1", expected = Element { name = "label", id = Just "l1", attributes = [], child = Nothing } }
+            , { input = "label(fgcolor:\"red\")", expected = Element { name = "label", id = Nothing, attributes = [ { name = "fgcolor", value = String "red" } ], child = Nothing } }
+            -- input
+            , { input = "input(placeholder:\"Hello\")", expected = Element { name = "input", id = Nothing, attributes = [ { name = "placeholder", value = String "Hello" } ], child = Nothing } }
+            -- row,col
+            , { input = "row:[label:\"Hello\", input:\"World\"]", expected = Element { name = "row", id = Nothing, attributes = [], child = Just (Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") }) } }
+            , { input = "col:[label:\"Hello\", input:\"World\"]", expected = Element { name = "col", id = Nothing, attributes = [], child = Just (Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") }) } }
+            ]
+
+
+functionTests : Test
+functionTests =
+    Test.describe "function" <|
+        Array.map testCase
+            [ { input = "FUNCTION(\"Hello\", STDOUT)", expected = Function { returnValue = String "Hello", destination = Stdout } }
+            , { input = "FUNCTION(ELEMENT(button), STDOUT)", expected = Function { returnValue = Element { name = "button", id = Nothing, attributes = [], child = Nothing }, destination = Stdout } }
+            , { input = "FUNCTION([], FILE(output.txt))", expected = Function { returnValue = List [], destination = File { path = "output.txt" } } }
+            ]
+

@@ -26,6 +26,10 @@ TODO: example of a wizard dialog
 
 TODO: example of a JSON input to `gui` (multiple inputs)
 
+## Dependencies
+
+- Tcl/Tk (`brew install tcl-tk`)
+
 ## The language
 
 The language is roughly similar to HTML: each element can contain attributes, an
@@ -42,7 +46,7 @@ input#name(oninput:name->STDOUT):"Init value"
 In addition to elements there are also arrays:
 
 ```
-vert:[label:"Hello", input:"World"]
+col:[label:"Hello", input:"World"]
 ```
 
 There are special objects: STDIN, STDOUT, FILE(path/to/file.txt)
