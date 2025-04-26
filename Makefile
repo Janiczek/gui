@@ -6,10 +6,10 @@
 compile: compileTests compileGui
 
 compileTests:
-	gren make --output=test src/TestRunner.gren
+	npx gren make --output=test src/TestRunner.gren
 
 compileGui:
-	gren make --output=gui src/Main.gren
+	npx gren make --output=gui src/Main.gren
 
 test: compileTests
 	node ./test

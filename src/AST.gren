@@ -1,4 +1,4 @@
-module AST exposing (Expr(..))
+module AST exposing (Expr(..), Attr)
 
 type Expr
     = String String
@@ -6,14 +6,18 @@ type Expr
     | Element
         { name : String
         , id : Maybe String
-        , attributes : Array { name : String, value : Expr }
+        , attrs : Array Attr
         , child : Maybe Expr
         }
     | Stdin
     | Stdout
     | File { path : String }
+    | Id String
     | Function
-        { returnValue : Expr
-        , destination : Expr
+        { src : Expr
+        , dst : Expr
         }
 
+
+type alias Attr = { name : String
+    , value : Expr }

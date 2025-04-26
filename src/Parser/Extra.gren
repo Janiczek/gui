@@ -1,0 +1,81 @@
+module Parser.Extra exposing (pratt, InfixParserTable, InfixParserCase, InfixParser)
+
+import Parser exposing (Parser, (|.), (|=), andThen, succeed, oneOf)
+
+type alias InfixParser a =
+    { left : a
+    , precedence : Int
+    , isRight : Bool
+    }
+    -> Parser a
+
+
+type alias InfixParserTable a = Array (InfixParserCase a)
+
+
+type alias InfixParserCase a =
+    { needs : String
+    , precedence : Int
+    , isRight : Bool
+    , parser : InfixParser a
+    }
+
+pratt :
+    { isRight : Bool
+    , precedence : Int
+    , prefix : Parser a
+    , infix : InfixParserTable a
+    }
+    -> Parser a
+pratt config =
+    let
+        initPrecedence : Int
+        initPrecedence =
+            if config.isRight then
+                config.precedence - 1
+
+            else
+                config.precedence
+    in
+    config.prefix
+        |> andThen
+            (\prefix ->
+                let
+                    go : a -> Parser a
+                    go left =
+                        oneOf
+                            [ findMatchingInfixParser config.infix
+                                |> andThen
+                                    (\maybeInfix ->
+                                        when maybeInfix is
+                                            Nothing ->
+                                                succeed left
+
+                                            Just infix ->
+                                                if initPrecedence < infix.precedence then
+                                                    infix.parser
+                                                        { left = left
+                                                        , precedence = infix.precedence
+                                                        , isRight = infix.isRight
+                                                        }
+                                                        |> andThen go
+                                                else
+                                                    succeed left
+                                    )
+                            , succeed left
+                            ]
+                in
+                go prefix
+            )
+
+findMatchingInfixParser : InfixParserTable a -> Parser (Maybe (InfixParserCase a))
+findMatchingInfixParser infixTable =
+    oneOf
+        (Array.map
+            (\infixCase ->
+                Parser.token infixCase.needs
+                    |> Parser.map (\_ -> Just infixCase)
+            )
+            infixTable
+            |> Array.pushLast (succeed Nothing)
+        )

@@ -1,8 +1,9 @@
 module AST.Parser exposing (parser, testSuite)
 
-import AST exposing (Expr(..))
+import AST exposing (Expr(..), Attr)
 import Expect
 import Parser exposing ((|.), (|=), Parser)
+import Parser.Extra exposing (InfixParser, InfixParserTable)
 import Test exposing (Test)
 
 
@@ -10,19 +11,42 @@ spaces : Parser {}
 spaces =
     Parser.chompWhile (\c -> c == ' ')
 
-
 parser : Parser Expr
 parser =
+    parserAux 0 False
+
+parserAux : Int -> Bool -> Parser Expr
+parserAux precedence isRight = 
+    Parser.Extra.pratt
+    { isRight = isRight
+    , precedence = precedence
+    , prefix =  prefixExpr
+        , infix = infixExpr
+
+    }
+
+prefixExpr : Parser Expr
+prefixExpr =
     Parser.oneOf
         [ string
         , list
-        , element
         , stdin
         , stdout
         , file
-        , function
+        , id
+        , element
         ]
 
+infixExpr : InfixParserTable Expr
+infixExpr = 
+    [ { needs = "->", precedence = 1, isRight = True,parser = function } 
+    ]
+
+location : Parser Expr
+location =
+    Parser.oneOf 
+        [ id, stdin, stdout, file
+        ]
 
 string : Parser Expr
 string =
@@ -44,14 +68,14 @@ stringHelp chunks =
                 ]
         , Parser.token "\""
             |> Parser.map (\_ -> Parser.Done (String.join "" chunks))
-        , Parser.chompWhile isUninteresting
+        , Parser.chompWhile isUninterestingForString
             |> Parser.getChompedString
             |> Parser.map (\chunk -> Parser.Loop (Array.pushLast chunk chunks))
         ]
 
 
-isUninteresting : Char -> Bool
-isUninteresting char =
+isUninterestingForString : Char -> Bool
+isUninterestingForString char =
     char /= '\\' && char /= '"'
 
 
@@ -68,10 +92,6 @@ list =
             }
 
 
-element : Parser Expr
-element =
-    Parser.problem "element"
-
 
 file : Parser Expr
 file =
@@ -87,6 +107,12 @@ file =
         |. Parser.token ")"
 
 
+id : Parser Expr
+id =
+    Parser.succeed Id
+        |. Parser.token "#"
+        |= identifier
+
 stdin : Parser Expr
 stdin =
     Parser.succeed Stdin
@@ -99,10 +125,68 @@ stdout =
         |. Parser.token "STDOUT"
 
 
-function : Parser Expr
-function =
-    Parser.problem "function"
+function : InfixParser Expr
+function config =
+    Parser.succeed (\dst -> Function { src = config.left, dst = dst })
+        |= location
 
+
+element : Parser Expr
+element =
+    Parser.succeed (\name id_ maybeAttrs child -> Element { name = name, id = id_, attrs = maybeAttrs 
+    |> Maybe.withDefault []
+    , child = child })
+        |= identifier
+        |= maybe (Parser.succeed identity
+        |. Parser.token "#"
+        |= identifier
+        )
+        |= maybe (Parser.sequence
+            { start = "("
+            , separator = ","
+            , end = ")"
+            , spaces = spaces
+            , item = Parser.lazy (\{} -> attr)
+            , trailing = Parser.Optional
+            }
+        )
+        |= maybe (Parser.succeed identity
+        |. Parser.token ":"
+        |= Parser.lazy (\{} -> parser)
+        )
+
+attr : Parser Attr
+attr =
+    Parser.succeed (\name value -> { name = name, value = value })
+        |= identifier
+        |. Parser.token ":"
+        |= Parser.lazy (\{} -> parser)
+
+maybe : Parser a -> Parser (Maybe a)
+maybe p =
+    Parser.oneOf 
+        [
+            Parser.map Just p
+            , Parser.succeed Nothing
+        ]
+
+isFirstIdentifierChar : Char -> Bool
+isFirstIdentifierChar c =
+    Char.isLower c || Char.isDigit c || c == '_'
+
+isNonfirstIdentifierChar : Char -> Bool
+isNonfirstIdentifierChar c =
+    Char.isAlphaNum c || c == '_'
+
+identifier : Parser String
+identifier =
+    (Parser.succeed (\first rest -> String.append rest first)
+        |= Parser.getChompedString (Parser.chompIf isFirstIdentifierChar)
+        |= Parser.getChompedString (Parser.chompWhile isNonfirstIdentifierChar)
+    )
+    |> Parser.andThen (\id_ -> 
+    if String.isEmpty (String.trim id_) then Parser.problem "identifier" else Parser.succeed (String.trim id_)
+    )
 
 
 -- TESTS
@@ -113,6 +197,7 @@ testSuite =
     Test.describe "AST.Parser"
         [ stringTests
         , listTests
+        , idTests
         , stdinTests
         , stdoutTests
         , fileTests
@@ -144,22 +229,14 @@ maybeTestCase { input, expected } =
 
 stdinTests : Test
 stdinTests =
-    Test.describe "stdin parser" <|
-        Array.map maybeTestCase
-            [ { input = "STDIN", expected = Just Stdin }
-            , { input = "stdin", expected = Nothing }
-            , { input = "Stdin", expected = Nothing }
-            ]
+    Test.describe "stdin parser"
+        [ testCase { input = "STDIN", expected = Stdin } ]
 
 
 stdoutTests : Test
 stdoutTests =
-    Test.describe "stdout parser" <|
-        Array.map maybeTestCase
-            [ { input = "STDOUT", expected = Just Stdout }
-            , { input = "stdout", expected = Nothing }
-            , { input = "Stdout", expected = Nothing }
-            ]
+    Test.describe "stdout parser"
+        [ testCase { input = "STDOUT", expected = Stdout } ]
 
 
 fileTests : Test
@@ -168,13 +245,8 @@ fileTests =
         Array.map maybeTestCase
             [ { input = "FILE(a.txt)", expected = Just (File {path = "a.txt"}) }
             , { input = "FILE()", expected = Nothing }
-            , { input = "FILE", expected = Nothing }
-            , { input = "file(a.txt)", expected = Nothing }
-            , { input = "file()", expected = Nothing }
-            , { input = "file", expected = Nothing }
             , { input = "File(a.txt)", expected = Nothing }
             , { input = "File()", expected = Nothing }
-            , { input = "File", expected = Nothing }
             ]
 
 
@@ -206,21 +278,32 @@ elementTests =
     Test.describe "element" <|
         Array.map testCase
             -- button
-            [ { input = "button", expected = Element { name = "button", id = Nothing, attributes = [], child = Nothing } }
-            , { input = "button#b1", expected = Element { name = "button", id = Just "b1", attributes = [], child = Nothing } }
-            , { input = "button:\"Hello\"", expected = Element { name = "button", id = Nothing, attributes = [], child = Just (String "Hello") } }
-            , { input = "button#b1:\"Hello\"", expected = Element { name = "button", id = Just "b1", attributes = [], child = Just (String "Hello") } }
-            , { input = "button:label:\"Hello\"", expected = Element { name = "button", id = Nothing, attributes = [], child = Just (Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") }) } }
-            , { input = "button(bgcolor:\"red\")", expected = Element { name = "button", id = Nothing, attributes = [ { name = "bgcolor", value = String "red" } ], child = Nothing } }
+            [ { input = "button", expected = Element { name = "button", id = Nothing, attrs = [], child = Nothing } }
+            , { input = "button#b1", expected = Element { name = "button", id = Just "b1", attrs = [], child = Nothing } }
+            , { input = "button#b_1", expected = Element { name = "button", id = Just "b_1", attrs = [], child = Nothing } }
+            , { input = "button#1", expected = Element { name = "button", id = Just "1", attrs = [], child = Nothing } }
+            , { input = "button#1_b", expected = Element { name = "button", id = Just "1_b", attrs = [], child = Nothing } }
+            , { input = "button:\"Hello\"", expected = Element { name = "button", id = Nothing, attrs = [], child = Just (String "Hello") } }
+            , { input = "button#b1:\"Hello\"", expected = Element { name = "button", id = Just "b1", attrs = [], child = Just (String "Hello") } }
+            , { input = "button:label:\"Hello\"", expected = Element { name = "button", id = Nothing, attrs = [], child = Just (Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }) } }
+            , { input = "button(bgcolor:\"red\")", expected = Element { name = "button", id = Nothing, attrs = [ { name = "bgcolor", value = String "red" } ], child = Nothing } }
             -- label
-            , { input = "label:\"Hello\"", expected = Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") } }
-            , { input = "label#l1", expected = Element { name = "label", id = Just "l1", attributes = [], child = Nothing } }
-            , { input = "label(fgcolor:\"red\")", expected = Element { name = "label", id = Nothing, attributes = [ { name = "fgcolor", value = String "red" } ], child = Nothing } }
+            , { input = "label:\"Hello\"", expected = Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") } }
+            , { input = "label#l1", expected = Element { name = "label", id = Just "l1", attrs = [], child = Nothing } }
+            , { input = "label(fgcolor:\"red\")", expected = Element { name = "label", id = Nothing, attrs = [ { name = "fgcolor", value = String "red" } ], child = Nothing } }
             -- input
-            , { input = "input(placeholder:\"Hello\")", expected = Element { name = "input", id = Nothing, attributes = [ { name = "placeholder", value = String "Hello" } ], child = Nothing } }
+            , { input = "input(placeholder:\"Hello\")", expected = Element { name = "input", id = Nothing, attrs = [ { name = "placeholder", value = String "Hello" } ], child = Nothing } }
             -- row,col
-            , { input = "row:[label:\"Hello\", input:\"World\"]", expected = Element { name = "row", id = Nothing, attributes = [], child = Just (Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") }) } }
-            , { input = "col:[label:\"Hello\", input:\"World\"]", expected = Element { name = "col", id = Nothing, attributes = [], child = Just (Element { name = "label", id = Nothing, attributes = [], child = Just (String "Hello") }) } }
+            , { input = "row:[label:\"Hello\", input:\"World\"]", expected = Element { name = "row", id = Nothing, attrs = [], child = Just (List [Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") }]) } }
+            , { input = "col:[label:\"Hello\", input:\"World\"]", expected = Element { name = "col", id = Nothing, attrs = [], child = Just (List [Element { name = "label", id = Nothing, attrs = [], child = Just (String "Hello") }, Element { name = "input", id = Nothing, attrs = [], child = Just (String "World") }]) } }
+            -- cases
+            , { input = "camelCase", expected = Element { name = "camelCase", id = Nothing, attrs = [], child = Nothing } }
+            , { input = "btn0", expected = Element { name = "btn0", id = Nothing, attrs = [], child = Nothing } }
+            , { input = "btn_0", expected = Element { name = "btn_0", id = Nothing, attrs = [], child = Nothing } }
+            , { input = "0", expected = Element { name = "0", id = Nothing, attrs = [], child = Nothing } }
+            , { input = "0b", expected = Element { name = "0b", id = Nothing, attrs = [], child = Nothing } }
+            , { input = "0_b", expected = Element { name = "0_b", id = Nothing, attrs = [], child = Nothing } }
+
             ]
 
 
@@ -228,8 +311,21 @@ functionTests : Test
 functionTests =
     Test.describe "function" <|
         Array.map testCase
-            [ { input = "FUNCTION(\"Hello\", STDOUT)", expected = Function { returnValue = String "Hello", destination = Stdout } }
-            , { input = "FUNCTION(ELEMENT(button), STDOUT)", expected = Function { returnValue = Element { name = "button", id = Nothing, attributes = [], child = Nothing }, destination = Stdout } }
-            , { input = "FUNCTION([], FILE(output.txt))", expected = Function { returnValue = List [], destination = File { path = "output.txt" } } }
+            [ { input = "#name->STDOUT", expected = Function { src = Id "name", dst = Stdout } }
+            , { input = "#x->#name", expected = Function { src = Id "x", dst = Id "name" }}
+            , { input = "#name->FILE(output.txt)", expected = Function { src = Id "name", dst = File { path = "output.txt" } } }
             ]
 
+idTests : Test
+idTests =
+    Test.describe "id" <|
+        Array.map testCase
+            [ { input = "#name", expected = Id "name" }
+            , { input = "#x", expected = Id "x" }
+            , { input = "#x_1", expected = Id "x_1" }
+            , { input = "#_1", expected = Id "_1" }
+            , { input = "#_x", expected = Id "_x" }
+            , { input = "#_X", expected = Id "_X" }
+            , { input = "#1x", expected = Id "1x" }
+            , { input = "#1", expected = Id "1" }
+            ]
