@@ -22,6 +22,7 @@ type Expr
         }
     | Stdin
     | Stdout
+    | Stderr
     | File { path : String }
     | Id String
     | Function
@@ -80,6 +81,9 @@ toString expr =
 
         Stdout ->
             "STDOUT"
+
+        Stderr ->
+            "STDERR"
 
         File { path } ->
             "FILE(" ++ path ++ ")"

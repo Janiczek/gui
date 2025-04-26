@@ -94,6 +94,9 @@ toTk_ parentIds ix expr =
                 Stdout ->
                     "stdout"
 
+                Stderr ->
+                    "stderr"
+
                 File _ ->
                     "file"
 
@@ -183,6 +186,9 @@ toTk_ parentIds ix expr =
 
         Stdout ->
             Debug.todo "stdout"
+
+        Stderr ->
+            Debug.todo "stderr"
 
         File { path } ->
             Debug.todo "file"

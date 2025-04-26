@@ -37,6 +37,7 @@ prefixExpr =
         , list
         , stdin
         , stdout
+        , stderr
         , file
         , id
         , element
@@ -55,6 +56,7 @@ location =
         [ id
         , stdin
         , stdout
+        , stderr
         , file
         ]
 
@@ -158,6 +160,12 @@ stdout =
         |. Parser.token "STDOUT"
 
 
+stderr : Parser Expr
+stderr =
+    Parser.succeed Stderr
+        |. Parser.token "STDERR"
+
+
 function : InfixParser Expr
 function config =
     Parser.succeed (\dst -> Function { src = config.left, dst = dst })
@@ -256,6 +264,7 @@ testSuite =
         , idTests
         , stdinTests
         , stdoutTests
+        , stderrTests
         , fileTests
         , elementTests
         , functionTests
@@ -297,6 +306,12 @@ stdoutTests : Test
 stdoutTests =
     Test.describe "stdout parser"
         [ testCase { input = "STDOUT", expected = Stdout } ]
+
+
+stderrTests : Test
+stderrTests =
+    Test.describe "stderr parser"
+        [ testCase { input = "STDERR", expected = Stderr } ]
 
 
 fileTests : Test
