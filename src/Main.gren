@@ -62,8 +62,12 @@ init :
             , command : Cmd Msg
             }
 init env =
-    if Array.length env.args == 1 then
-        when Array.get 0 env.args is
+    let
+        argsLen =
+            Array.length env.args
+    in
+    if argsLen == 2 || argsLen == 3 then
+        when Array.get (argsLen - 1) env.args is
             Just programStr ->
                 when Parser.run AST.Parser.parser programStr is
                     Ok expr ->
@@ -90,7 +94,8 @@ init env =
                                                         (\tempDir ->
                                                             let
                                                                 tempFile =
-                                                                    FileSystem.Path.append tempDir (FileSystem.Path.fromPosixString "gui.tk")
+                                                                    tempDir
+                                                                        |> FileSystem.Path.append (FileSystem.Path.fromPosixString "gui.tk")
                                                             in
                                                             FileSystem.writeFile fsPermission (Bytes.fromString tclTkStr) tempFile
                                                         )
@@ -98,18 +103,41 @@ init env =
                                             }
 
                     Err _ ->
-                        Node.startProgram { model = ErrModel, command = exit 1 }
+                        Node.startProgram { model = ErrModel, command = exit CannotParse }
 
             Nothing ->
-                Node.startProgram { model = ErrModel, command = exit 1 }
+                Node.startProgram { model = ErrModel, command = exit ImpossibleBug }
 
     else
-        Node.startProgram { model = ErrModel, command = exit 1 }
+        Node.startProgram { model = ErrModel, command = exit WrongNumberOfArguments }
 
 
-exit : Int -> Cmd Msg
-exit code =
-    Node.exitWithCode code
+type ExitReason
+    = WrongNumberOfArguments
+    | ImpossibleBug
+    | CannotParse
+    | CannotWriteTempFile
+
+
+exitCode : ExitReason -> Int
+exitCode reason =
+    when reason is
+        WrongNumberOfArguments ->
+            1
+
+        CannotParse ->
+            2
+
+        CannotWriteTempFile ->
+            3
+
+        ImpossibleBug ->
+            42
+
+
+exit : ExitReason -> Cmd Msg
+exit reason =
+    Node.exitWithCode (exitCode reason)
         |> Task.perform (\_ -> WeExited)
 
 
@@ -117,7 +145,7 @@ update : Msg -> Model -> { model : Model, command : Cmd Msg }
 update msg model =
     when model is
         ErrModel ->
-            { model = ErrModel, command = exit 1 }
+            { model = ErrModel, command = Cmd.none }
 
         OkModel model_ ->
             updateOk msg model_
@@ -125,7 +153,7 @@ update msg model =
 
 updateOk : Msg -> OkModel -> { model : Model, command : Cmd Msg }
 updateOk msg model =
-    when Debug.log "msg" msg is
+    when msg is
         WishInitialized data ->
             if Array.isEmpty model.stdinBeforeInitBuffer then
                 { model = OkModel { model | initializedProcess = Just data }
@@ -166,12 +194,8 @@ updateOk msg model =
         WroteTempFile result ->
             when result is
                 Err err ->
-                    let
-                        _ =
-                            Debug.log "error writing temp file" err
-                    in
                     { model = ErrModel
-                    , command = exit 1
+                    , command = exit CannotWriteTempFile
                     }
 
                 Ok tempFile ->
@@ -209,19 +233,11 @@ updateOk msg model =
                     }
 
                 Err (Stream.Cancelled str) ->
-                    let
-                        _ =
-                            Debug.log "Cancelled" str
-                    in
                     { model = OkModel model
                     , command = Cmd.none
                     }
 
                 Err Stream.Locked ->
-                    let
-                        _ =
-                            Debug.log "Locked" {}
-                    in
                     { model = OkModel model
                     , command =
                         Node.exitWithCode 1
@@ -229,10 +245,6 @@ updateOk msg model =
                     }
 
                 Ok Nothing ->
-                    let
-                        _ =
-                            Debug.log "Couldn't convert stream buffer to string" {}
-                    in
                     { model = OkModel model
                     , command =
                         Node.exitWithCode 1

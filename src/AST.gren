@@ -29,12 +29,12 @@ type alias Attr =
     }
 
 
+
+-- TO TCL/TK
+
+
 toTclTk : Expr -> String
 toTclTk expr =
-    let
-        _ =
-            Debug.log "TODO toTclTk" {}
-    in
     """
     set text Hello
     proc doIt {widget} {
@@ -56,6 +56,66 @@ toTclTk expr =
     grid .b1 -row 0 -column 0
     grid .b2 -row 0 -column 1
     """
+
+
+
+-- TO STRING
+
+
+toString : Expr -> String
+toString expr =
+    when expr is
+        String str ->
+            "\"" ++ String.replace "\"" "\\\"" str ++ "\""
+
+        List list ->
+            wrapWith "["
+                "]"
+                (list
+                    |> Array.map toString
+                    |> String.join ","
+                )
+
+        Element element ->
+            [ Just element.name
+            , element.id |> Maybe.map (\id -> "#" ++ id)
+            , element.attrs
+                |> Array.map (\attr -> attr.name ++ ":" ++ toString attr.value)
+                |> String.join ","
+                |> ifEmpty (wrapWith "(" ")")
+            , element.child |> Maybe.map (\child -> " " ++ toString child)
+            ]
+                |> Array.mapAndKeepJust identity
+                |> String.join ""
+
+        Stdin ->
+            "STDIN"
+
+        Stdout ->
+            "STDOUT"
+
+        File { path } ->
+            "FILE(" ++ path ++ ")"
+
+        Id id ->
+            "#" ++ id
+
+        Function { src, dst } ->
+            toString src ++ "->" ++ toString dst
+
+
+wrapWith : String -> String -> String -> String
+wrapWith prefix suffix str =
+    prefix ++ " " ++ str ++ " " ++ suffix
+
+
+ifEmpty : (String -> String) -> String -> Maybe String
+ifEmpty f str =
+    if str == "" then
+        Nothing
+
+    else
+        Just (f str)
 
 
 
@@ -82,7 +142,7 @@ toTclTkTests =
 
 test : Expr -> String -> Test
 test input output =
-    Test.test (Debug.toString input) <|
+    Test.test (toString input) <|
         \_ ->
             toTclTk input
                 |> Expect.equal output
