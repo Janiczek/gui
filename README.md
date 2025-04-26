@@ -4,14 +4,14 @@ An UNIX-philosophy utility for standing up GUIs.
 
 ## Examples
 
-| Command                                                                              | Result                                                                             |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `gui 'label:"XYZ"'`                                                                  | ![gui 'label:"XYZ"'](https://github.com/Janiczek/gui/raw/main/examples/label.webp) |
-| `echo Hello \| gui text:STDIN`                                                       |                                                                                    |
-| `seq 100 \| gui textarea:STDIN`                                                      |                                                                                    |
-| `gui 'textarea:FILE(x.txt)'`                                                         |                                                                                    |
-| `gui 'col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]'` |                                                                                    |
-| `gui 'jsontree:FILE(x.json)'`                                                        |                                                                                    |
+| Command                                                                              | Result                                                               |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `gui 'label:"XYZ"'`                                                                  | ![](https://github.com/Janiczek/gui/raw/main/examples/label.webp)    |
+| `echo Hello \| gui label:STDIN`                                                      | ![](https://github.com/Janiczek/gui/raw/main/examples/stdin.webp)    |
+| `seq 100 \| gui textarea:STDIN`                                                      | ![](https://github.com/Janiczek/gui/raw/main/examples/textarea.webp) |
+| `gui 'textarea:FILE(x.txt)'`                                                         |                                                                      |
+| `gui 'col:[label:"Your name:", input#name, button(onclick:#name->STDOUT):"Submit"]'` |                                                                      |
+| `gui 'jsontree:FILE(x.json)'`                                                        |                                                                      |
 
 TODO: example of a wizard dialog
 

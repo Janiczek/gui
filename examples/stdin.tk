@@ -1,0 +1,5 @@
+# label:STDIN
+wm title . ""
+wm minsize . 300 200
+label .label -text [read stdin]
+grid .label
