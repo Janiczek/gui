@@ -19,7 +19,9 @@ An UNIX-philosophy utility for standing up GUIs.
 
 ## Dependencies
 
-- Tcl/Tk 9 (`brew install tcl-tk`)
+- Tcl/Tk 9
+  - macOS: `brew install tcl-tk`
+  - Linux: `apt install tk`
 
 ## The language
 
